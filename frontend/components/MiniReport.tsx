@@ -1,35 +1,21 @@
 "use client"
 
-import type React from "react"
-import { useState } from "react"
 import {
   Shield,
-  ShieldCheck,
-  ShieldAlert,
   Mail,
-  FileText,
   CheckCircle,
   XCircle,
   AlertTriangle,
-  ArrowRight,
-  Loader2,
+  RotateCcw,
   FileCheck
 } from "lucide-react"
 import { CategoryScoreCard } from "./CategoryScoreCard"
-
-interface CategoryScore {
-  score: number
-  max: number
-  percentage: number
-  risk_level: "SECURE" | "MODERATE" | "CRITICAL"
-}
+import type { CategoryScore, RiskLevel } from "@/lib/types"
 
 interface MiniReportProps {
-  leadId: number
   score: number
-  riskLevel: "SECURE" | "MODERATE" | "CRITICAL"
+  riskLevel: RiskLevel
 
-  // NEW - Category scores
   emailSecurity: CategoryScore
   serverSecurity: CategoryScore
   compliance: CategoryScore
@@ -48,14 +34,11 @@ interface MiniReportProps {
 
   // Compliance
   complianceRisk: boolean
-  cookieConsentDetected: boolean
-  dataLeakSafe: boolean
 
-  onRequestFullReport: (leadId: number) => void
+  onReset: () => void
 }
 
 export function MiniReport({
-  leadId,
   score,
   riskLevel,
   emailSecurity,
@@ -70,21 +53,8 @@ export function MiniReport({
   serverLeak,
   securityHeadersScore,
   complianceRisk,
-  cookieConsentDetected,
-  dataLeakSafe,
-  onRequestFullReport
+  onReset
 }: MiniReportProps) {
-  const [isRequesting, setIsRequesting] = useState(false)
-
-  const handleRequestReport = async () => {
-    setIsRequesting(true)
-    try {
-      await onRequestFullReport(leadId)
-    } finally {
-      setIsRequesting(false)
-    }
-  }
-
   // Determine score color and badge
   const getScoreColor = () => {
     if (score >= 80) return { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", progress: "bg-emerald-500" }
@@ -285,16 +255,6 @@ export function MiniReport({
             </div>
 
             <div className="space-y-2.5">
-              {/* Cookie Consent - NOW DYNAMIC */}
-              <div className="flex items-center gap-3">
-                {cookieConsentDetected ? (
-                  <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                ) : (
-                  <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                )}
-                <span className="text-sm text-slate-700">Cookie Consent Logic</span>
-              </div>
-
               {/* Privacy Policy */}
               <div className="flex items-center gap-3">
                 {!complianceRisk ? (
@@ -302,46 +262,21 @@ export function MiniReport({
                 ) : (
                   <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
                 )}
-                <span className="text-sm text-slate-700">Consent Banner Detection</span>
-              </div>
-
-              {/* Data Leak Check - NOW DYNAMIC */}
-              <div className="flex items-center gap-3">
-                {dataLeakSafe ? (
-                  <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                ) : (
-                  <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                )}
-                <span className="text-sm text-slate-700">Data Leak Check</span>
+                <span className="text-sm text-slate-700">Privacy Policy Page</span>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Section 3: CTA Button */}
       <div className="pt-4">
         <button
-          onClick={handleRequestReport}
-          disabled={isRequesting}
-          className="relative w-full py-4 px-6 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-sm rounded-xl shadow-xl shadow-orange-500/30 hover:shadow-2xl hover:shadow-orange-500/40 hover:from-orange-600 hover:to-amber-600 active:scale-[0.98] transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
+          onClick={onReset}
+          className="w-full py-3 px-6 bg-white border-2 border-slate-200 text-slate-700 font-semibold text-sm rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors flex items-center justify-center gap-2"
         >
-          {isRequesting ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Sending Request...</span>
-            </>
-          ) : (
-            <>
-              <span>Get Remediation Plan</span>
-              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </>
-          )}
+          <RotateCcw className="w-4 h-4" />
+          <span>Scan Another Domain</span>
         </button>
-
-        <p className="text-xs text-slate-500 text-center mt-3">
-          Our security experts will provide a detailed analysis and recommendations
-        </p>
       </div>
     </div>
   )

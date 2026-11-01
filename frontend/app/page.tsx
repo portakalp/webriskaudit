@@ -4,7 +4,6 @@ import { useState } from "react"
 import { ScanWorkflow, WorkflowStep } from "@/components/ScanWorkflow"
 import { DotGridBackground } from "@/components/dot-grid-background"
 import { TrustFooter } from "@/components/trust-footer"
-import { PricingSection } from "@/components/PricingSection"
 import Image from "next/image"
 import Link from "next/link"
 import { ShieldCheck } from "lucide-react"
@@ -165,8 +164,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-
-      <PricingSection />
 
       <TrustFooter />
     </main>
