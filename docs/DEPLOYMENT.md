@@ -349,13 +349,14 @@ first start can take 30 to 120 seconds because of Direct VPC egress), then
 A 429 (the API's or Cloudflare's rate limit; runners share addresses) is
 retried once after `Retry-After`. If any step from the deploy on fails, or
 the job is cancelled or times out after the deploy began, the job moves all
-traffic back to the noted revision and waits up to 4 minutes for `/health`;
-on the first deploy that is the placeholder, which is fine. The deploy step
-may take 10 minutes and the smoke test 20; past that they fail, so the
-rollback runs well within the job's 50-minute limit. After a cancel GitHub
-gives the job about 5 more minutes: enough to move the traffic, though the
-`/health` wait may be cut short. The job summary lists the new and the
-previous revision.
+traffic back to the noted revision and waits up to 4 minutes for `/health`
+to answer with any 2xx status. On the first deploy that revision is the
+placeholder, which answers every path, `/health` included, with its hello
+page; that is fine. The deploy step may take 10 minutes and the smoke test
+20; past that they fail, so the rollback runs well within the job's
+50-minute limit. After a cancel GitHub gives the job about 5 more minutes:
+enough to move the traffic, though the `/health` wait may be cut short. The
+job summary lists the new and the previous revision.
 
 Logs: Logs Explorer → Refine scope → **Log view** →
 `webriskaudit-logs/_AllLogs`, or
