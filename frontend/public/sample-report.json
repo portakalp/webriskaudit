@@ -1,35 +1,553 @@
 {
   "domain": "example.com",
-  "score": 84,
-  "risk_level": "SECURE",
-  "spf_status": true,
-  "dkim_status": false,
-  "dmarc_status": true,
-  "blacklist_status": true,
-  "waf_status": true,
-  "ssl_status": true,
-  "server_leak": false,
-  "security_headers_score": 2,
-  "compliance_risk": false,
-  "email_security": {
-    "score": 30,
-    "max": 35,
-    "percentage": 85.7,
-    "risk_level": "SECURE",
-    "tests": []
+  "scanned_at": "2026-11-01T09:30:00Z",
+  "duration_ms": 512,
+  "score": 65,
+  "grade": "C",
+  "coverage": {
+    "scored": 11,
+    "inconclusive": 1,
+    "total": 12
   },
-  "server_security": {
-    "score": 40,
-    "max": 50,
-    "percentage": 80.0,
-    "risk_level": "SECURE",
-    "tests": []
-  },
-  "compliance": {
-    "score": 10,
-    "max": 10,
-    "percentage": 100.0,
-    "risk_level": "SECURE",
-    "tests": []
-  }
+  "categories": [
+    {
+      "id": "email",
+      "title": "Email authentication",
+      "score": 75,
+      "points": 15.0,
+      "possible": 20
+    },
+    {
+      "id": "transport",
+      "title": "HTTPS and TLS",
+      "score": 83,
+      "points": 25.0,
+      "possible": 30
+    },
+    {
+      "id": "headers",
+      "title": "HTTP security headers",
+      "score": 43,
+      "points": 15.0,
+      "possible": 35
+    }
+  ],
+  "checks": [
+    {
+      "id": "email.spf",
+      "title": "SPF record",
+      "category": "email",
+      "status": "pass",
+      "weight": 10,
+      "points": 10.0,
+      "summary": "The SPF record uses -all, so mail from servers it does not list fails SPF.",
+      "evidence": [
+        {
+          "label": "Record",
+          "value": "v=spf1 include:_spf.mailhost.example.net -all"
+        },
+        {
+          "label": "all mechanism",
+          "value": "-all (fail)"
+        },
+        {
+          "label": "DNS lookups at the top level",
+          "value": "1 of 10 (nested includes are not expanded)"
+        }
+      ],
+      "remediation": null,
+      "references": [
+        {
+          "title": "RFC 7208: Sender Policy Framework (SPF)",
+          "url": "https://www.rfc-editor.org/rfc/rfc7208.html"
+        },
+        {
+          "title": "RFC 7208, section 4.5: selecting the SPF record",
+          "url": "https://www.rfc-editor.org/rfc/rfc7208.html#section-4.5"
+        },
+        {
+          "title": "RFC 7208, section 4.6.4: DNS lookup limits",
+          "url": "https://www.rfc-editor.org/rfc/rfc7208.html#section-4.6.4"
+        },
+        {
+          "title": "RFC 7208, section 5.5: \"ptr\" (do not use)",
+          "url": "https://www.rfc-editor.org/rfc/rfc7208.html#section-5.5"
+        }
+      ],
+      "duration_ms": 41
+    },
+    {
+      "id": "email.dmarc",
+      "title": "DMARC policy",
+      "category": "email",
+      "status": "warn",
+      "weight": 10,
+      "points": 5.0,
+      "summary": "The DMARC policy is none, so mail that fails authentication is only monitored.",
+      "evidence": [
+        {
+          "label": "Record",
+          "value": "v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com"
+        },
+        {
+          "label": "Found at",
+          "value": "_dmarc.example.com"
+        },
+        {
+          "label": "Effective policy",
+          "value": "none (from p)"
+        },
+        {
+          "label": "Subdomain policy (sp)",
+          "value": "not set"
+        },
+        {
+          "label": "Non-existent subdomain policy (np)",
+          "value": "not set"
+        },
+        {
+          "label": "Aggregate reports (rua)",
+          "value": "set"
+        }
+      ],
+      "remediation": "Once the aggregate reports show legitimate mail passes, move to p=quarantine and then p=reject.",
+      "references": [
+        {
+          "title": "RFC 9989: DMARC",
+          "url": "https://www.rfc-editor.org/rfc/rfc9989.html"
+        },
+        {
+          "title": "RFC 9989, section 4.7: DMARC policy record format",
+          "url": "https://www.rfc-editor.org/rfc/rfc9989.html#section-4.7"
+        },
+        {
+          "title": "RFC 9989, section 4.10: DNS tree walk",
+          "url": "https://www.rfc-editor.org/rfc/rfc9989.html#section-4.10"
+        },
+        {
+          "title": "RFC 9989, section 4.10.1: DMARC policy discovery",
+          "url": "https://www.rfc-editor.org/rfc/rfc9989.html#section-4.10.1"
+        }
+      ],
+      "duration_ms": 38
+    },
+    {
+      "id": "email.dkim",
+      "title": "DKIM key",
+      "category": "email",
+      "status": "inconclusive",
+      "weight": 5,
+      "points": 0.0,
+      "summary": "No DKIM key under common selectors; selectors cannot be listed, so this does not prove DKIM is missing.",
+      "evidence": [
+        {
+          "label": "Selectors checked",
+          "value": "default, google, selector1, selector2, k1, k2, s1, s2, dkim, mail, smtp"
+        }
+      ],
+      "remediation": null,
+      "references": [
+        {
+          "title": "RFC 6376 (DKIM), section 3.6.1: key record format",
+          "url": "https://www.rfc-editor.org/rfc/rfc6376.html#section-3.6.1"
+        }
+      ],
+      "duration_ms": 127
+    },
+    {
+      "id": "transport.tls_certificate",
+      "title": "TLS certificate",
+      "category": "transport",
+      "status": "pass",
+      "weight": 15,
+      "points": 15.0,
+      "summary": "The certificate from Let's Encrypt (R13) is trusted and valid for 60 more days.",
+      "evidence": [
+        {
+          "label": "Issuer",
+          "value": "Let's Encrypt (R13)"
+        },
+        {
+          "label": "Valid from",
+          "value": "2026-10-03T08:12:41Z"
+        },
+        {
+          "label": "Valid until",
+          "value": "2027-01-01T08:12:40Z"
+        },
+        {
+          "label": "Days left",
+          "value": "60"
+        },
+        {
+          "label": "Lifetime",
+          "value": "90 days"
+        },
+        {
+          "label": "Protocol",
+          "value": "TLSv1.3"
+        },
+        {
+          "label": "Names",
+          "value": "example.com, www.example.com"
+        }
+      ],
+      "remediation": null,
+      "references": [
+        {
+          "title": "OWASP Transport Layer Security Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html"
+        },
+        {
+          "title": "RFC 8996: Deprecating TLS 1.0 and TLS 1.1",
+          "url": "https://www.rfc-editor.org/rfc/rfc8996.html"
+        },
+        {
+          "title": "Let's Encrypt integration guide: when to renew",
+          "url": "https://letsencrypt.org/docs/integration-guide/"
+        }
+      ],
+      "duration_ms": 212
+    },
+    {
+      "id": "transport.https_redirect",
+      "title": "HTTP to HTTPS redirect",
+      "category": "transport",
+      "status": "pass",
+      "weight": 5,
+      "points": 5.0,
+      "summary": "http://example.com/ redirects straight to HTTPS on example.com.",
+      "evidence": [
+        {
+          "label": "Redirect chain",
+          "value": "http://example.com/ -> https://example.com/"
+        }
+      ],
+      "remediation": null,
+      "references": [
+        {
+          "title": "RFC 6797 section 7.2: HSTS hosts redirect plain HTTP requests",
+          "url": "https://www.rfc-editor.org/rfc/rfc6797.html#section-7.2"
+        },
+        {
+          "title": "OWASP Transport Layer Security Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html"
+        }
+      ],
+      "duration_ms": 486
+    },
+    {
+      "id": "transport.hsts",
+      "title": "HTTP Strict Transport Security",
+      "category": "transport",
+      "status": "warn",
+      "weight": 10,
+      "points": 5.0,
+      "summary": "HSTS is enabled, but max-age is only 1 day (under 180 days).",
+      "evidence": [
+        {
+          "label": "URL checked",
+          "value": "https://example.com/"
+        },
+        {
+          "label": "Header",
+          "value": "max-age=86400"
+        },
+        {
+          "label": "max-age",
+          "value": "86400 seconds (1 day)"
+        },
+        {
+          "label": "includeSubDomains",
+          "value": "no"
+        },
+        {
+          "label": "preload",
+          "value": "no"
+        }
+      ],
+      "remediation": "Raise max-age to at least 15552000 (180 days); one year, max-age=31536000, is the common choice once HTTPS works everywhere.",
+      "references": [
+        {
+          "title": "RFC 6797: HTTP Strict Transport Security",
+          "url": "https://www.rfc-editor.org/rfc/rfc6797.html"
+        },
+        {
+          "title": "MDN: Strict-Transport-Security",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Strict-Transport-Security"
+        },
+        {
+          "title": "OWASP HTTP Strict Transport Security Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html"
+        }
+      ],
+      "duration_ms": 391
+    },
+    {
+      "id": "headers.csp",
+      "title": "Content Security Policy",
+      "category": "headers",
+      "status": "fail",
+      "weight": 10,
+      "points": 0.0,
+      "summary": "No Content Security Policy is enforced on the home page.",
+      "evidence": [],
+      "remediation": "Send a Content-Security-Policy header that limits scripts, e.g. script-src 'nonce-{random}' 'strict-dynamic'; object-src 'none'; base-uri 'none'. Roll it out with Content-Security-Policy-Report-Only first to find what it would block.",
+      "references": [
+        {
+          "title": "MDN: Content-Security-Policy",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy"
+        },
+        {
+          "title": "MDN: CSP script-src",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/script-src"
+        },
+        {
+          "title": "W3C: Content Security Policy Level 3",
+          "url": "https://www.w3.org/TR/CSP3/"
+        },
+        {
+          "title": "OWASP Content Security Policy Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html"
+        }
+      ],
+      "duration_ms": 392
+    },
+    {
+      "id": "headers.clickjacking",
+      "title": "Clickjacking protection",
+      "category": "headers",
+      "status": "pass",
+      "weight": 5,
+      "points": 5.0,
+      "summary": "X-Frame-Options is DENY, so other sites cannot frame the page.",
+      "evidence": [
+        {
+          "label": "X-Frame-Options",
+          "value": "DENY"
+        }
+      ],
+      "remediation": null,
+      "references": [
+        {
+          "title": "MDN: CSP frame-ancestors",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/frame-ancestors"
+        },
+        {
+          "title": "MDN: X-Frame-Options",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Frame-Options"
+        },
+        {
+          "title": "OWASP Clickjacking Defense Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html"
+        }
+      ],
+      "duration_ms": 392
+    },
+    {
+      "id": "headers.content_type_options",
+      "title": "X-Content-Type-Options",
+      "category": "headers",
+      "status": "pass",
+      "weight": 5,
+      "points": 5.0,
+      "summary": "X-Content-Type-Options is set to nosniff.",
+      "evidence": [
+        {
+          "label": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ],
+      "remediation": null,
+      "references": [
+        {
+          "title": "MDN: X-Content-Type-Options",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Content-Type-Options"
+        },
+        {
+          "title": "OWASP HTTP Headers Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
+        }
+      ],
+      "duration_ms": 392
+    },
+    {
+      "id": "headers.referrer_policy",
+      "title": "Referrer-Policy",
+      "category": "headers",
+      "status": "warn",
+      "weight": 5,
+      "points": 2.5,
+      "summary": "No Referrer-Policy header is sent; browsers default to strict-origin-when-cross-origin, but the site states no policy.",
+      "evidence": [],
+      "remediation": "Send Referrer-Policy: strict-origin-when-cross-origin, or no-referrer or same-origin for stricter privacy.",
+      "references": [
+        {
+          "title": "MDN: Referrer-Policy",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy"
+        },
+        {
+          "title": "W3C: Referrer Policy",
+          "url": "https://www.w3.org/TR/referrer-policy/"
+        }
+      ],
+      "duration_ms": 392
+    },
+    {
+      "id": "headers.cookies",
+      "title": "Cookie security",
+      "category": "headers",
+      "status": "warn",
+      "weight": 5,
+      "points": 2.5,
+      "summary": "Of 2 cookies set on the home page, 1 has no SameSite attribute and 1 looks like a session cookie but lacks HttpOnly.",
+      "evidence": [
+        {
+          "label": "Cookie session_id",
+          "value": "Secure, no HttpOnly, SameSite=Lax, session-like name"
+        },
+        {
+          "label": "Cookie lang",
+          "value": "Secure, no HttpOnly, no SameSite"
+        }
+      ],
+      "remediation": "Add an explicit SameSite=Lax or Strict and HttpOnly to session cookies, for example 'Set-Cookie: __Host-session=...; Path=/; Secure; HttpOnly; SameSite=Lax'.",
+      "references": [
+        {
+          "title": "MDN: Set-Cookie",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie"
+        },
+        {
+          "title": "OWASP Session Management Cheat Sheet: Cookies",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#cookies"
+        },
+        {
+          "title": "RFC 6265: HTTP State Management Mechanism",
+          "url": "https://www.rfc-editor.org/rfc/rfc6265.html"
+        }
+      ],
+      "duration_ms": 392
+    },
+    {
+      "id": "headers.server_disclosure",
+      "title": "Server version disclosure",
+      "category": "headers",
+      "status": "fail",
+      "weight": 5,
+      "points": 0.0,
+      "summary": "The Server header reveals a software version.",
+      "evidence": [
+        {
+          "label": "Server",
+          "value": "nginx/1.24.0"
+        }
+      ],
+      "remediation": "Hide version numbers: server_tokens off; in nginx, ServerTokens Prod in Apache, expose_php = Off in PHP, and enableVersionHeader=\"false\" for ASP.NET. Remove X-Powered-By entirely.",
+      "references": [
+        {
+          "title": "MDN: Server",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Server"
+        },
+        {
+          "title": "OWASP HTTP Headers Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
+        }
+      ],
+      "duration_ms": 392
+    },
+    {
+      "id": "info.cdn",
+      "title": "CDN / edge network",
+      "category": "info",
+      "status": "info",
+      "weight": 0,
+      "points": 0.0,
+      "summary": "No CDN or edge network was detected from the response headers.",
+      "evidence": [],
+      "remediation": null,
+      "references": [],
+      "duration_ms": 392
+    },
+    {
+      "id": "info.privacy_policy",
+      "title": "Privacy policy link",
+      "category": "info",
+      "status": "info",
+      "weight": 0,
+      "points": 0.0,
+      "summary": "The home page links to a privacy policy at https://example.com/privacy.",
+      "evidence": [
+        {
+          "label": "Link",
+          "value": "https://example.com/privacy"
+        },
+        {
+          "label": "Link text",
+          "value": "Privacy policy"
+        },
+        {
+          "label": "Matched on",
+          "value": "link text and URL"
+        }
+      ],
+      "remediation": null,
+      "references": [],
+      "duration_ms": 392
+    },
+    {
+      "id": "info.permissions_policy",
+      "title": "Permissions-Policy",
+      "category": "info",
+      "status": "info",
+      "weight": 0,
+      "points": 0.0,
+      "summary": "Permissions-Policy is not set.",
+      "evidence": [],
+      "remediation": "Optionally send Permissions-Policy to switch off browser features the site does not use, e.g. camera=(), microphone=(), geolocation=().",
+      "references": [
+        {
+          "title": "MDN: Permissions-Policy",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Permissions-Policy"
+        },
+        {
+          "title": "W3C: Permissions Policy",
+          "url": "https://www.w3.org/TR/permissions-policy/"
+        }
+      ],
+      "duration_ms": 392
+    },
+    {
+      "id": "info.deprecated_headers",
+      "title": "Deprecated headers",
+      "category": "info",
+      "status": "info",
+      "weight": 0,
+      "points": 0.0,
+      "summary": "Deprecated security headers are sent: X-XSS-Protection.",
+      "evidence": [
+        {
+          "label": "X-XSS-Protection",
+          "value": "1; mode=block"
+        }
+      ],
+      "remediation": "Remove X-XSS-Protection or set it to 0: browsers dropped the XSS filter, which could itself be abused, and CSP replaces it.",
+      "references": [
+        {
+          "title": "MDN: X-XSS-Protection",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-XSS-Protection"
+        },
+        {
+          "title": "MDN: Expect-CT",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Expect-CT"
+        },
+        {
+          "title": "OWASP HTTP Headers Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
+        }
+      ],
+      "duration_ms": 392
+    }
+  ],
+  "scanner_version": "2.0.0.dev0",
+  "methodology_version": "2026-11"
 }

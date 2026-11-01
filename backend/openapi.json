@@ -1,0 +1,536 @@
+{
+  "components": {
+    "schemas": {
+      "Category": {
+        "enum": [
+          "email",
+          "transport",
+          "headers",
+          "info"
+        ],
+        "title": "Category",
+        "type": "string"
+      },
+      "CategorySummary": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Category"
+          },
+          "points": {
+            "title": "Points",
+            "type": "number"
+          },
+          "possible": {
+            "description": "Sum of weights of completed scored checks.",
+            "title": "Possible",
+            "type": "integer"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0-100 over completed scored checks; null if none.",
+            "title": "Score"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "score",
+          "points",
+          "possible"
+        ],
+        "title": "CategorySummary",
+        "type": "object"
+      },
+      "CheckResult": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/Category"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "examples": [
+              "email.dmarc"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "points": {
+            "description": "Points awarded: weight for pass, half for warn, else 0.",
+            "title": "Points",
+            "type": "number"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/Reference"
+            },
+            "title": "References",
+            "type": "array"
+          },
+          "remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How to fix a warn or fail.",
+            "title": "Remediation"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "summary": {
+            "description": "One sentence stating what was found.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "weight": {
+            "description": "Most points the check can award; 0 for informational checks.",
+            "title": "Weight",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "category",
+          "status",
+          "weight",
+          "points",
+          "summary",
+          "duration_ms"
+        ],
+        "title": "CheckResult",
+        "type": "object"
+      },
+      "Coverage": {
+        "properties": {
+          "inconclusive": {
+            "description": "Scored checks that could not reach a verdict.",
+            "title": "Inconclusive",
+            "type": "integer"
+          },
+          "scored": {
+            "description": "Scored checks that reached a verdict (pass, warn or fail).",
+            "title": "Scored",
+            "type": "integer"
+          },
+          "total": {
+            "description": "All scored checks (weight > 0).",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scored",
+          "inconclusive",
+          "total"
+        ],
+        "title": "Coverage",
+        "type": "object"
+      },
+      "Evidence": {
+        "description": "One observed fact behind a verdict, e.g. the DMARC record that was read.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "Evidence",
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "ProblemDetails": {
+        "description": "An error response (RFC 9457 problem details).",
+        "properties": {
+          "detail": {
+            "description": "Explanation of this occurrence, safe to show to users.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "status": {
+            "description": "HTTP status code.",
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "description": "Short summary of the problem type.",
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "description": "URI that identifies the problem type.",
+            "examples": [
+              "https://webriskaudit.com/problems/invalid-domain"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "title": "ProblemDetails",
+        "type": "object"
+      },
+      "Reference": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url"
+        ],
+        "title": "Reference",
+        "type": "object"
+      },
+      "ScanReport": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategorySummary"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckResult"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/Coverage"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "enum": [
+                  "A",
+                  "B",
+                  "C",
+                  "D",
+                  "F"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grade"
+          },
+          "methodology_version": {
+            "title": "Methodology Version",
+            "type": "string"
+          },
+          "scanned_at": {
+            "format": "date-time",
+            "title": "Scanned At",
+            "type": "string"
+          },
+          "scanner_version": {
+            "title": "Scanner Version",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0-100 over completed scored checks; null when too few checks completed.",
+            "title": "Score"
+          }
+        },
+        "required": [
+          "domain",
+          "scanned_at",
+          "duration_ms",
+          "score",
+          "grade",
+          "coverage",
+          "categories",
+          "checks",
+          "scanner_version",
+          "methodology_version"
+        ],
+        "title": "ScanReport",
+        "type": "object"
+      },
+      "ScanRequest": {
+        "properties": {
+          "domain": {
+            "description": "Domain name or URL to scan. The host is scanned as given (www. is kept).",
+            "examples": [
+              "example.com"
+            ],
+            "maxLength": 2048,
+            "title": "Domain",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain"
+        ],
+        "title": "ScanRequest",
+        "type": "object"
+      },
+      "ServiceInfo": {
+        "properties": {
+          "docs": {
+            "title": "Docs",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "docs"
+        ],
+        "title": "ServiceInfo",
+        "type": "object"
+      },
+      "Status": {
+        "description": "Outcome of a single check.\n\n``inconclusive`` means the check could not reach a verdict (timeout, DNS\nfailure, nothing to inspect). It never awards or costs points: it is left\nout of the score and reported under coverage instead.",
+        "enum": [
+          "pass",
+          "warn",
+          "fail",
+          "inconclusive",
+          "info"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "description": "Passive security posture scanner for domains: email authentication, HTTPS/TLS and HTTP security headers, with evidence for every verdict.",
+    "title": "WebRiskAudit API",
+    "version": "2.0.0.dev0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Service information"
+      }
+    },
+    "/api/v1/scan": {
+      "post": {
+        "description": "Run every check against the domain, or return a recent report from the cache.",
+        "operationId": "scan_domain_api_v1_scan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The request body is larger than 8192 bytes (request-too-large)."
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The input is not a public domain name (invalid-domain), the body is malformed (invalid-request), the domain does not exist (domain-not-found), or it resolves to a non-public address (non-public-target)."
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too many new scans from this client, or its previous new scan is still running (rate-limited). A client is an IPv4 address or an IPv6 /64 network.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until this client may start another scan.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The scan failed unexpectedly (internal-error)."
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "DNS gave no usable answer for the domain (dns-unavailable)."
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The scanner has no room for a new scan: too many are running or waiting, none could start in time, or the overall limit of new scans is used up (scanner-busy).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a new scan is likely to be accepted.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Scan a domain"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness check"
+      }
+    }
+  }
+}

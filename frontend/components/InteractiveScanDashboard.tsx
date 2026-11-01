@@ -1,155 +1,70 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { CheckCircle } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 import { NetworkGraph } from "./scan-dashboard/NetworkGraph"
-import { MetricCard } from "./scan-dashboard/MetricCard"
 import { ScanPhaseIndicator } from "./scan-dashboard/ScanPhaseIndicator"
-import type { DashboardState, ScanPhase } from "./scan-dashboard/types"
+import type { ScanPhase } from "./scan-dashboard/types"
 
-interface InteractiveScanDashboardProps {
-  onComplete?: () => void
-}
-
-// Timed phases for the animation only; they do not track the real scan
-const SCAN_PHASES: ScanPhase[] = [
+// An animation, not live progress: the API runs all checks at the same time
+// and answers once, with the whole report. These phases only play on a timer.
+// The parent replaces this view as soon as the API responds, usually before
+// the phases have played out; if the scan takes longer, the last phase stays.
+const PHASES: ScanPhase[] = [
+  { label: "Looking up SPF, DMARC and DKIM records", nodes: ["spf", "dmarc", "dkim"], duration: 1200 },
+  { label: "Reading the TLS certificate", nodes: ["tls"], duration: 900 },
+  { label: "Following the HTTP to HTTPS redirect", nodes: ["redirect", "hsts"], duration: 1000 },
   {
-    name: "Network Discovery",
-    tests: ["dns", "spf"],
-    duration: 6000,
-  },
-  {
-    name: "Security Analysis",
-    tests: ["ssl", "dmarc", "waf"],
-    duration: 6000,
-  },
-  {
-    name: "Defense Scanning",
-    tests: ["headers", "blacklist"],
-    duration: 6000,
-  },
-  {
-    name: "Privacy",
-    tests: ["compliance"],
-    duration: 4500,
-  },
-  {
-    name: "Score Calculation",
-    tests: ["score"],
+    label: "Reading the home page's security headers",
+    nodes: ["csp", "frames", "nosniff", "referrer", "cookies", "server"],
     duration: 1500,
   },
+  {
+    label: "Noting the CDN, privacy link and other headers",
+    nodes: ["cdn", "privacy", "permissions", "deprecated"],
+    duration: 1200,
+  },
+  { label: "Waiting for the scan to finish", nodes: [], duration: 0 },
 ]
 
-const TOTAL_TESTS = SCAN_PHASES.reduce((sum, phase) => sum + phase.tests.length, 0)
+export function InteractiveScanDashboard({ domain }: { domain: string }) {
+  const [phaseIndex, setPhaseIndex] = useState(0)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
-const initialState: DashboardState = {
-  currentPhaseIndex: 0,
-  completedTests: [],
-  activeTests: [],
-}
-
-export function InteractiveScanDashboard({ onComplete }: InteractiveScanDashboardProps) {
-  const [state, setState] = useState<DashboardState>(initialState)
-  const [progressPercentage, setProgressPercentage] = useState(0)
-
-  // Main animation orchestrator. Cleanup clears every pending timer, so a
-  // re-run (StrictMode mounts effects twice in development) starts over.
+  // Step through the phases once; cleanup clears the timer, so a re-run
+  // (StrictMode runs effects twice in development) does not skip a phase.
   useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = []
-    let phaseIndex = 0
-    const totalDuration = SCAN_PHASES.reduce((sum, phase) => sum + phase.duration, 0)
-    let elapsedTime = 0
+    if (phaseIndex >= PHASES.length - 1) return
+    const timer = setTimeout(() => setPhaseIndex((index) => index + 1), PHASES[phaseIndex].duration)
+    return () => clearTimeout(timer)
+  }, [phaseIndex])
 
-    const runPhase = () => {
-      if (phaseIndex >= SCAN_PHASES.length) {
-        // All phases complete
-        return
-      }
-
-      const phase = SCAN_PHASES[phaseIndex]
-
-      // Mark tests as active (multiple at once for dynamic effect)
-      setState((prev) => ({
-        ...prev,
-        currentPhaseIndex: phaseIndex,
-        activeTests: phase.tests,
-      }))
-
-      const timer = setTimeout(() => {
-        // Mark tests as complete
-        setState((prev) => ({
-          ...prev,
-          completedTests: [...prev.completedTests, ...phase.tests],
-          activeTests: [],
-        }))
-
-        elapsedTime += phase.duration
-        setProgressPercentage(Math.round((elapsedTime / totalDuration) * 100))
-
-        phaseIndex++
-        runPhase()
-      }, phase.duration)
-
-      timers.push(timer)
-    }
-
-    runPhase()
-
-    return () => timers.forEach(clearTimeout)
+  // Real elapsed time, the one honest progress figure on this view
+  useEffect(() => {
+    const started = Date.now()
+    const timer = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => clearInterval(timer)
   }, [])
 
-  // Call onComplete when progress reaches 100%
-  useEffect(() => {
-    if (progressPercentage === 100 && onComplete) {
-      const timer = setTimeout(() => onComplete(), 500)
-      return () => clearTimeout(timer)
-    }
-  }, [progressPercentage, onComplete])
-
-  const currentPhase = SCAN_PHASES[state.currentPhaseIndex]
+  const completed = useMemo(() => new Set(PHASES.slice(0, phaseIndex).flatMap((phase) => phase.nodes)), [phaseIndex])
+  const active = useMemo(() => new Set(PHASES[phaseIndex].nodes), [phaseIndex])
 
   return (
-    <div className="mt-6 py-8 space-y-6 animate-in fade-in duration-500">
-      {/* Progress Header */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <span className="font-medium text-slate-700">Scanning Progress</span>
-          <span className="text-slate-600">{progressPercentage}%</span>
-        </div>
-        <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-orange-500 to-amber-500 transition-all duration-300 ease-out"
-            style={{ width: `${progressPercentage}%` }}
-          />
-        </div>
+    <div className="mt-6 space-y-5 animate-in fade-in duration-500">
+      <div className="flex items-baseline justify-between gap-4">
+        <p className="min-w-0 text-sm font-semibold text-slate-900">
+          Scanning <span className="font-mono [overflow-wrap:anywhere]">{domain}</span>
+        </p>
+        <p className="shrink-0 text-xs tabular-nums text-slate-600">{elapsedSeconds} s elapsed</p>
       </div>
 
-      {/* Main Dashboard Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Network Graph: 2 columns on desktop */}
-        <div className="md:col-span-2 order-2 md:order-1">
-          <NetworkGraph
-            completedTests={state.completedTests}
-            activeTests={state.activeTests}
-          />
-        </div>
+      <NetworkGraph completed={completed} active={active} />
 
-        {/* Metrics Sidebar: 1 column on desktop */}
-        <div className="space-y-4 order-1 md:order-2">
-          <MetricCard
-            label="Tests Completed"
-            value={`${state.completedTests.length}/${TOTAL_TESTS}`}
-            icon={CheckCircle}
-          />
-        </div>
-      </div>
+      <ScanPhaseIndicator label={PHASES[phaseIndex].label} />
 
-      {/* Phase Indicator */}
-      {currentPhase && <ScanPhaseIndicator phase={currentPhase} />}
-
-      {/* Footer message */}
-      <p className="text-xs text-slate-400 text-center">
-        This may take 10-30 seconds depending on your domain configuration
+      <p className="text-center text-xs text-slate-600 text-pretty">
+        Most scans finish within a few seconds. A slow or unreachable site can take up to about 45 seconds, plus up
+        to 30 seconds of waiting when the scanner is busy. The animation is illustrative: the checks run in parallel
+        on the server.
       </p>
     </div>
   )
