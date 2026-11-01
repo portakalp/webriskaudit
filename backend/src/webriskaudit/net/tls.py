@@ -21,8 +21,14 @@ ALLOWED_PORTS = frozenset({443})
 
 
 def verified_context() -> ssl.SSLContext:
-    """Client context that checks the chain against certifi's CA bundle and the hostname."""
-    return ssl.create_default_context(cafile=certifi.where())
+    """Client context that checks the chain against certifi's CA bundle and the hostname.
+
+    The TLS 1.2 floor is set explicitly: on some platforms the default context
+    reports MINIMUM_SUPPORTED and leaves the floor to the system crypto policy.
+    """
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
 
 
 class TlsProbe:
