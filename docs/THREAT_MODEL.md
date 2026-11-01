@@ -316,12 +316,12 @@ scripts.
 
 ## Data kept
 
-| Data                                   | Where                                       | How long                                                                                                                                                                                                                                     |
-| -------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Client address (IPv4, or the IPv6 /64) | Rate limiter and scan queue, process memory | While it has hits in the 10-minute window or a new scan waiting or running, then until the next request of any kind (the liveness probe calls `/health` every 30 seconds); lost on restart and deploy. Never logged or persisted by the app. |
-| Client address in request headers      | Cloudflare, load balancer, Cloud Run        | Not stored by the project: the load balancer logs no requests and Cloud Run's request logs are excluded. Cloudflare keeps its own logs (privacy note).                                                                                       |
-| Scanned domain and report              | Cache, process memory                       | Served for 10 minutes, then until the next request (at most 1024 reports); lost on restart and deploy.                                                                                                                                       |
-| Scanned domain                         | Application log (`webriskaudit-logs`)       | 14 days in production. Unexpected errors, which name the domain, also up to 30 days in Error Reporting.                                                                                                                                      |
+| Data                                   | Where                                       | How long                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client address (IPv4, or the IPv6 /64) | Rate limiter and scan queue, process memory | While it has hits in the 10-minute window or a new scan waiting or running, then until the next request of any kind (the liveness probe calls `/health` every 30 seconds); lost on restart and deploy. Never logged or persisted by the app.                                                                        |
+| Client address in request headers      | Cloudflare, load balancer, Cloud Run        | Not stored in Google Cloud: the load balancer logs no requests and Cloud Run's request logs are excluded. Requests that Cloudflare's rules block can be recorded with the client address in the zone's security events, which the operator can see for up to 31 days. Cloudflare keeps its own logs (privacy note). |
+| Scanned domain and report              | Cache, process memory                       | Served for 10 minutes, then until the next request (at most 1024 reports); lost on restart and deploy.                                                                                                                                                                                                              |
+| Scanned domain                         | Application log (`webriskaudit-logs`)       | 14 days in production. Unexpected errors, which name the domain, also up to 30 days in Error Reporting.                                                                                                                                                                                                             |
 
 There is no database, no account, no cookie and no analytics. See
 [ADR 0003](adr/0003-no-personal-data.md).
@@ -511,9 +511,11 @@ the first deploy (DEPLOYMENT.md, "Unverified points").
    Reporting, a global service that reads these logs, can keep unexpected
    errors with their tracebacks for 30 days. Audit logs of the operator's
    and CI's actions go to the `_Required` bucket, which cannot be changed.
-   Cloudflare's logs are outside the project; the privacy note describes
-   them. *Unverified:* that the request-log exclusion holds (DEPLOYMENT.md,
-   checklist step 7).
+   Cloudflare's logs are outside the project, except that requests blocked
+   by its rules (DEPLOYMENT.md, steps 6h and 6i) can be recorded with the
+   client address in the zone's security events, which the operator can
+   see for up to 31 days; the privacy note describes both. *Unverified:*
+   that the request-log exclusion holds (DEPLOYMENT.md, checklist step 7).
 8. **Updates.** CA trust comes from certifi, not the system store, so keep
    dependencies current (Dependabot, `uv lock --upgrade`).
 
