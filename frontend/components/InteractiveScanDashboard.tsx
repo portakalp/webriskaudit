@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { CheckCircle, Shield, AlertTriangle, Activity } from "lucide-react"
+import { CheckCircle, Shield, Activity } from "lucide-react"
 import { NetworkGraph } from "./scan-dashboard/NetworkGraph"
 import { MetricCard } from "./scan-dashboard/MetricCard"
 import { ScanPhaseIndicator } from "./scan-dashboard/ScanPhaseIndicator"
