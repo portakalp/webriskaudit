@@ -1,12 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from SecurityAuditor import SecurityAuditor
-import json
 import logging
 import os
-from typing import List, Dict, Any
+from typing import List
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -97,7 +95,7 @@ def map_category(category: dict) -> dict:
         "tests": []
     }
 
-def map_audit_results(domain: str, raw_report: dict) -> dict:
+def map_audit_results(raw_report: dict) -> dict:
     """
     Maps new SecurityAuditor output (simplified 3-level structure) to ScanResponse format.
 
@@ -185,7 +183,7 @@ def scan_domain(request: ScanRequest):
         auditor = SecurityAuditor(cleaned_domain)
         raw_report = auditor.run_audit()  # New SecurityAuditor returns dict directly
         cleaned_domain = auditor.domain # Update with normalized domain
-        mapped_results = map_audit_results(cleaned_domain, raw_report)
+        mapped_results = map_audit_results(raw_report)
     except Exception:
         logger.exception(f"Audit failed for {cleaned_domain}")
         raise HTTPException(status_code=502, detail="Scan failed: the domain could not be checked.")
