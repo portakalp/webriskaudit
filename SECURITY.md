@@ -5,7 +5,9 @@
 Please report vulnerabilities privately through GitHub:
 **Security → Report a vulnerability** on this repository
 ([private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)).
-Do not open a public issue for security problems.
+Do not open a public issue for security problems. If the button is
+missing, open an issue that only asks for a private contact, without
+details.
 
 Include what you found, how to reproduce it, and the impact you expect.
 I aim to acknowledge reports within 7 days.
