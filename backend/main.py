@@ -2,10 +2,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from SecurityAuditor import SecurityAuditor, CATEGORY_MAX
+from SecurityAuditor import SecurityAuditor
 import json
 import logging
-from typing import List, Dict, Optional, Any
+import os
+from typing import List, Dict, Any
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -17,13 +18,19 @@ app = FastAPI(
     version="2.1.0"
 )
 
-# Configure CORS middleware
+# Configure CORS middleware (ALLOWED_ORIGINS is a comma-separated list)
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,https://webriskaudit.com").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 # ===========================
@@ -44,7 +51,6 @@ class ScanResponse(BaseModel):
     domain: str
     score: int
     risk_level: str
-    error: Optional[str] = None
 
     # Email & Reputation
     spf_status: bool
@@ -77,13 +83,6 @@ def calculate_risk_level(score: int) -> str:
         return "MODERATE"
     else:
         return "CRITICAL"
-
-def get_default_categories():
-    return {
-        "email_security": {"score": 0, "max": CATEGORY_MAX["email"], "percentage": 0.0, "risk_level": "CRITICAL", "tests": []},
-        "server_security": {"score": 0, "max": CATEGORY_MAX["server"], "percentage": 0.0, "risk_level": "CRITICAL", "tests": []},
-        "compliance": {"score": 0, "max": CATEGORY_MAX["compliance"], "percentage": 0.0, "risk_level": "CRITICAL", "tests": []}
-    }
 
 def map_category(category: dict) -> dict:
     """Maps one SecurityAuditor category to CategoryScoreDetail format."""
@@ -161,27 +160,6 @@ def map_audit_results(domain: str, raw_report: dict) -> dict:
         }
     }
 
-def get_fallback_response(domain: str, error_msg: str) -> ScanResponse:
-    defaults = get_default_categories()
-    return ScanResponse(
-        domain=domain,
-        score=0,
-        risk_level="CRITICAL",
-        error=error_msg,
-        spf_status=False,
-        dkim_status=False,
-        dmarc_status=False,
-        blacklist_status=False,
-        waf_status=False,
-        ssl_status=False,
-        server_leak=False,
-        security_headers_score=0,
-        compliance_risk=True,
-        email_security=defaults["email_security"],
-        server_security=defaults["server_security"],
-        compliance=defaults["compliance"]
-    )
-
 # ===========================
 # API Endpoints
 # ===========================
@@ -194,7 +172,7 @@ def root():
 def scan_domain(request: ScanRequest):
     """
     Scans a domain and returns the security report.
-    Handles ALL errors gracefully by returning a fallback 200 OK response with error details.
+    Responds 502 with a generic message if the scan fails; details are only logged.
     """
     logger.info(f"Starting scan for domain: {request.domain}")
     cleaned_domain = request.domain.strip()
@@ -204,10 +182,9 @@ def scan_domain(request: ScanRequest):
         raw_report = auditor.run_audit()  # New SecurityAuditor returns dict directly
         cleaned_domain = auditor.domain # Update with normalized domain
         mapped_results = map_audit_results(cleaned_domain, raw_report)
-    except Exception as e:
-        logger.error(f"Audit failed for {cleaned_domain}: {e}")
-        # Return graceful error response immediately if audit fails completely
-        return get_fallback_response(cleaned_domain, str(e))
+    except Exception:
+        logger.exception(f"Audit failed for {cleaned_domain}")
+        raise HTTPException(status_code=502, detail="Scan failed: the domain could not be checked.")
 
     return ScanResponse(
         domain=cleaned_domain,
