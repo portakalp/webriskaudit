@@ -232,10 +232,18 @@ export interface components {
         };
         /** ServiceInfo */
         ServiceInfo: {
-            /** Docs */
-            docs: string;
+            /**
+             * Docs
+             * @description Path of the interactive API documentation; null when it is switched off.
+             */
+            docs: string | null;
             /** Name */
             name: string;
+            /**
+             * Revision
+             * @description Commit the running image was built from; null when unknown (a local run).
+             */
+            revision: string | null;
             /** Version */
             version: string;
         };
@@ -298,6 +306,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScanReport"];
+                };
+            };
+            /** @description The proxy in front of the API passed no valid client address (invalid-client-ip). Only with origin authentication on. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The request did not come through the proxy in front of the API (forbidden). Only with origin authentication on, and for every route except GET / and GET /health. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description The request body is larger than 8192 bytes (request-too-large). */

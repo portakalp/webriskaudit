@@ -143,10 +143,12 @@ Backend (Python 3.12, [uv](https://docs.astral.sh/uv/)):
 ```bash
 cd backend
 uv sync
-uv run uvicorn webriskaudit.api:app --reload --port 8000
+uv run uvicorn webriskaudit.api:app --reload --port 8000 --no-proxy-headers --ws none
 ```
 
-Interactive API docs are at http://localhost:8000/docs. Settings are read
+The two flags match the Docker image: uvicorn trusts no `X-Forwarded-For`
+header and has no WebSocket support. Interactive API docs are at
+http://localhost:8000/docs unless `API_DOCS_ENABLED=false`. Settings are read
 from environment variables, listed with their defaults in
 [`backend/.env.example`](backend/.env.example). Certificates are verified
 against the [certifi](https://pypi.org/project/certifi/) CA bundle, so no
@@ -192,10 +194,18 @@ The API's TypeScript types (`frontend/lib/api-types.ts`) are generated from
 
 ### Deployment notes
 
-- The API image (`backend/Dockerfile`) runs uvicorn with `--proxy-headers`
-  and trusts `X-Forwarded-For` only from the addresses in
-  `FORWARDED_ALLOW_IPS` (default `127.0.0.1`). Set it to the reverse proxy's
-  address, so the rate limits see the real client address.
+- The API image (`backend/Dockerfile`) runs uvicorn with
+  `--no-proxy-headers`, so `X-Forwarded-For` is never read. Behind a proxy,
+  set `ORIGIN_AUTH_SECRETS` and have the proxy send one of the secrets in an
+  `X-Origin-Auth` header on every request; every route except `GET /` and
+  `GET /health` then answers 403 without it. Set `CLIENT_IP_HEADER` to the
+  header in which the proxy passes the client's address (`CF-Connecting-IP`
+  behind Cloudflare), so the rate limits see the real client address.
+  [ADR 0006](docs/adr/0006-client-ip-behind-cloudflare.md) explains why, and
+  lists the Cloudflare settings this depends on.
+- Set `API_DOCS_ENABLED=false` in production: `/docs` and `/redoc` load
+  scripts from a CDN. [`backend/openapi.json`](backend/openapi.json)
+  documents the API either way.
 - The site's API URL (`NEXT_PUBLIC_API_URL`) is inlined at build time, and the
   site's Content Security Policy must allow its origin in `connect-src`, or
   the browser blocks every scan. For Cloudflare Pages, set
@@ -217,7 +227,7 @@ curl -s -X POST http://localhost:8000/api/v1/scan \
 | `POST` | `/api/v1/scan`  | Scan a domain and return the report                 |
 | `GET`  | `/health`       | Liveness check                                      |
 | `GET`  | `/`             | Service name and version                            |
-| `GET`  | `/docs`         | Interactive OpenAPI documentation                   |
+| `GET`  | `/docs`         | Interactive docs; off with `API_DOCS_ENABLED=false` |
 
 The OpenAPI document is committed as
 [`backend/openapi.json`](backend/openapi.json), together with the TypeScript
@@ -240,6 +250,8 @@ details (`application/problem+json`) with `type`, `title`, `status` and
 |    422 | `invalid-request`   | The body is not `{"domain": "<string>"}`                    |
 |    422 | `domain-not-found`  | The domain does not exist (NXDOMAIN)                        |
 |    422 | `non-public-target` | The domain resolves to a private or reserved address        |
+|    400 | `invalid-client-ip` | No valid client address in the proxy's `CLIENT_IP_HEADER`   |
+|    403 | `forbidden`         | The request did not come through the proxy (origin auth)    |
 |    413 | `request-too-large` | The request body is larger than 8 kB                        |
 |    429 | `rate-limited`      | Too many new scans; `Retry-After` gives the wait in seconds |
 |    500 | `internal-error`    | Unexpected failure (no internal details are returned)       |
@@ -254,9 +266,9 @@ against the limits; concurrent requests for the same domain share one scan; at
 most 4 scans run at once and at most 16 more wait, each for up to 30 seconds,
 after which the API answers 503; and a waiting scan is dropped when its client
 disconnects. Every check reports at most 20 evidence items, so a hostile site
-cannot inflate the report. Behind a reverse proxy, run uvicorn with
-`--proxy-headers --forwarded-allow-ips=<proxy address>` so the limits see the
-real client address.
+cannot inflate the report. The client is the TCP peer, or behind a proxy the
+address in `CLIENT_IP_HEADER`, accepted only with origin authentication (see
+the deployment notes).
 
 The scanner resolves names with the host's resolvers unless `DNS_NAMESERVERS`
 lists others. On cloud hosts whose resolver also answers for private zones
@@ -267,7 +279,9 @@ the email checks would show their TXT records.
 The API keeps no database or scan history. It writes one JSON log line per
 scan request (domain, outcome, cache use, score, grade, coverage and
 duration), never logs client IP addresses or request bodies, and switches off
-uvicorn's access log, which would record client addresses.
+uvicorn's access log, which would record client addresses. The image also
+turns off uvicorn's WebSocket support, which would log the client address and
+path of every WebSocket handshake.
 
 ## Roadmap
 

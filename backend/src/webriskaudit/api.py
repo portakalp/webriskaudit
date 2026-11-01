@@ -6,16 +6,25 @@ overall rate limits on new scans, a short-lived report cache that also
 coalesces concurrent scans of one domain, and a cap on scans running or
 waiting for a slot, with a time limit on the wait.
 
-Run with ``uvicorn webriskaudit.api:app``.
+Behind a proxy, origin authentication (``ORIGIN_AUTH_SECRETS``) refuses
+requests that did not pass through it, and the client address for the rate
+limits comes from the proxy's header (``CLIENT_IP_HEADER``). Without it, the
+client is the TCP peer; ``X-Forwarded-For`` is never read.
+
+Run with ``uvicorn webriskaudit.api:app --no-proxy-headers --ws none``: by
+default uvicorn trusts ``X-Forwarded-For`` from 127.0.0.1, and its WebSocket
+support logs the client address and path of every upgrade request.
 """
 
 import asyncio
+import hmac
+import ipaddress
 import logging
 import math
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Any, Literal
 
@@ -25,11 +34,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.status import WS_1008_POLICY_VIOLATION
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from starlette.websockets import WebSocketClose
 
 from webriskaudit import __version__
 from webriskaudit.cache import ResultCache
-from webriskaudit.logs import configure_logging
+from webriskaudit.logs import configure_logging, format_uvicorn_logs_as_json
 from webriskaudit.models import ScanReport
 from webriskaudit.net.dns import DnsResolver
 from webriskaudit.net.domain import InvalidDomainError, normalize_domain
@@ -55,6 +66,10 @@ BUSY_RETRY_AFTER = 10
 """Seconds a client is asked to wait when the scanner has no room for a new scan."""
 RUNNING_RETRY_AFTER = 5
 """Seconds a client is asked to wait while its previous new scan is still running."""
+ORIGIN_AUTH_HEADER = "X-Origin-Auth"
+"""Header in which the proxy in front of the API sends the shared secret."""
+OPEN_ROUTES = frozenset({("GET", "/health"), ("GET", "/")})
+"""Answered without origin authentication; the platform's health checks call /health directly."""
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +100,12 @@ class ProblemDetails(BaseModel):
 class ServiceInfo(BaseModel):
     name: str
     version: str
-    docs: str
+    revision: str | None = Field(
+        description="Commit the running image was built from; null when unknown (a local run)."
+    )
+    docs: str | None = Field(
+        description="Path of the interactive API documentation; null when it is switched off."
+    )
 
 
 class Health(BaseModel):
@@ -144,6 +164,14 @@ def _retry_after_doc(description: str) -> dict[str, Any]:
 
 
 _SCAN_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: _problem_doc(
+        "The proxy in front of the API passed no valid client address (invalid-client-ip). "
+        "Only with origin authentication on."
+    ),
+    403: _problem_doc(
+        "The request did not come through the proxy in front of the API (forbidden). Only "
+        "with origin authentication on, and for every route except GET / and GET /health."
+    ),
     413: _problem_doc(
         f"The request body is larger than {MAX_BODY_BYTES} bytes (request-too-large)."
     ),
@@ -197,6 +225,17 @@ class ScannerBusyError(Exception):
 
 
 @dataclass
+class ScanTimes:
+    """How long the scan behind a request waited for a slot and ran, in milliseconds.
+
+    None where it did not get that far, or when the report came from the cache.
+    """
+
+    queue_ms: int | None = None
+    scan_ms: int | None = None
+
+
+@dataclass
 class _NewScan:
     """A scan started by this service that is waiting for a slot or running."""
 
@@ -206,6 +245,7 @@ class _NewScan:
     """Requests waiting for its report."""
     started: bool = False
     """True once it holds a slot."""
+    times: ScanTimes = field(default_factory=ScanTimes)
 
 
 _OVERALL = "*"
@@ -231,10 +271,13 @@ class ScanService:
         self._queue_timeout = settings.queue_timeout
         self._scans: dict[asyncio.Task[ScanReport], _NewScan] = {}
 
-    async def report(self, domain: str, client: str) -> tuple[ScanReport, str]:
+    async def report(
+        self, domain: str, client: str, times: ScanTimes | None = None
+    ) -> tuple[ScanReport, str]:
         """The report for a normalized domain and where it came from: miss, hit or coalesced.
 
-        Only a new scan counts against the rate limits.
+        Only a new scan counts against the rate limits. ``times`` receives the
+        timings of the scan this request waited for, also when it failed.
         """
         cached = self._cache.get(domain)
         if cached is not None:
@@ -246,12 +289,23 @@ class ScanService:
         if task is None:
             key = client_key(client)
             self._admit(key)
-            scan = _NewScan(key)
-            task = self._cache.start(domain, self._run(domain, scan))
-            self._scans[task] = scan
+            new = _NewScan(key)
+            task = self._cache.start(domain, self._run(domain, new))
+            self._scans[task] = new
             task.add_done_callback(self._finished)
             source = "miss"
-        return await self._join(task), source
+        scan = self._scans.get(task)
+        try:
+            return await self._join(task), source
+        finally:
+            if times is not None and scan is not None:
+                times.queue_ms, times.scan_ms = scan.times.queue_ms, scan.times.scan_ms
+
+    def sweep(self) -> None:
+        """Forget expired rate limit keys and reports; cheap enough for every request."""
+        self._per_client.sweep()
+        self._overall.sweep()
+        self._cache.sweep()
 
     def _admit(self, client: str) -> None:
         """Count a new scan for ``client``, or raise the problem that refuses it."""
@@ -295,19 +349,29 @@ class ScanService:
                 self._scans.pop(task, None)  # it no longer takes a queue place or the client's turn
 
     async def _run(self, domain: str, scan: _NewScan) -> ScanReport:
+        queued = time.perf_counter()
         try:
             async with asyncio.timeout(self._queue_timeout):
                 await self._slots.acquire()
         except TimeoutError:
+            scan.times.queue_ms = _elapsed_ms(queued)
             raise ScannerBusyError from None
         scan.started = True
+        scan.times.queue_ms = _elapsed_ms(queued)
+        started = time.perf_counter()
         try:
             return await self._scan(domain)
         finally:
+            scan.times.scan_ms = _elapsed_ms(started)
             self._slots.release()
 
     def _finished(self, task: asyncio.Task[ScanReport]) -> None:
         self._scans.pop(task, None)
+
+
+def _elapsed_ms(since: float) -> int:
+    """Milliseconds since ``since``, a time.perf_counter() value."""
+    return round((time.perf_counter() - since) * 1000)
 
 
 # --- Request body limit ----------------------------------------------------------
@@ -371,6 +435,96 @@ def _content_length(scope: Scope) -> int:
     return 0
 
 
+# --- Origin authentication -------------------------------------------------------
+
+
+class OriginAuth:
+    """Answers 403 unless the request carries one of ``secrets`` in X-Origin-Auth.
+
+    The proxy in front of the API adds the header to every request it
+    forwards, so a request that reaches the API another way, such as straight
+    to its load balancer, is refused before anything else reads it. Only
+    ``OPEN_ROUTES`` are exempt. More than one secret allows a rotation; each
+    is compared in constant time. No route takes a WebSocket, so every
+    WebSocket connection is closed here, secret or not.
+    """
+
+    def __init__(self, app: ASGIApp, secrets: Sequence[str]) -> None:
+        self.app = app
+        self._secrets = tuple(secret.encode() for secret in secrets)
+        self._header = ORIGIN_AUTH_HEADER.lower().encode()
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "websocket":
+            await WebSocketClose(code=WS_1008_POLICY_VIOLATION)(scope, receive, send)
+            return
+        if (
+            scope["type"] == "lifespan"
+            or (scope["method"], scope["path"]) in OPEN_ROUTES
+            or self._authenticated(scope)
+        ):
+            await self.app(scope, receive, send)
+            return
+        response = problem_response(
+            403,
+            PROBLEM_BASE + "forbidden",
+            "Forbidden",
+            "Requests must reach this API through its public address.",
+        )
+        await response(scope, receive, send)
+
+    def _authenticated(self, scope: Scope) -> bool:
+        values = [value for name, value in scope["headers"] if name.lower() == self._header]
+        if len(values) != 1:
+            return False
+        matched = False
+        for secret in self._secrets:
+            matched |= hmac.compare_digest(values[0], secret)
+        return matched
+
+
+def client_address(request: Request, header: str | None) -> tuple[str, str]:
+    """The client's address and its source: ``header`` (set by the proxy) or the TCP peer.
+
+    ``header`` is only given with origin authentication, which guarantees
+    the proxy set it. Raises a 400 problem when it is missing, repeated or
+    not an IP address.
+    """
+    if header is None:
+        return (request.client.host if request.client else "unknown"), "peer"
+    values = request.headers.getlist(header)
+    try:
+        address = ipaddress.ip_address(values[0].strip()) if len(values) == 1 else None
+    except ValueError:
+        address = None
+    if address is None:
+        raise ProblemError(
+            400,
+            "invalid-client-ip",
+            "Invalid client address",
+            "The proxy in front of the API did not pass a valid client address.",
+        )
+    return str(address), "header"
+
+
+class Sweeper:
+    """Calls ``sweep`` at the start of every HTTP request, health checks included.
+
+    Expired rate limit keys and reports are then dropped by the next request
+    of any kind instead of waiting for the next scan. No background task:
+    on a host that allocates CPU only during requests it would not run.
+    """
+
+    def __init__(self, app: ASGIApp, sweep: Callable[[], None]) -> None:
+        self.app = app
+        self.sweep = sweep
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            self.sweep()
+        await self.app(scope, receive, send)
+
+
 # --- Application -----------------------------------------------------------------
 
 
@@ -382,17 +536,6 @@ class _Api(FastAPI):
             components = schema.setdefault("components", {}).setdefault("schemas", {})
             components["ProblemDetails"] = ProblemDetails.model_json_schema()
         return schema
-
-
-@asynccontextmanager
-async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    configure_logging()
-    yield
-
-
-def _client_ip(request: Request) -> str:
-    # Behind a reverse proxy, uvicorn --proxy-headers puts the real client here.
-    return request.client.host if request.client else "unknown"
 
 
 async def _until_disconnected(request: Request) -> None:
@@ -439,13 +582,25 @@ def create_app(*, settings: Settings | None = None, scan: ScanFn | None = None) 
         ).scan
     service = ScanService(scan, settings)
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        configure_logging()
+        logger.info("startup", extra={"fields": {"version": __version__, **settings.summary()}})
+        yield
+
+    docs = settings.api_docs_enabled
     app = _Api(
         title="WebRiskAudit API",
         version=__version__,
         description="Passive security posture scanner for domains: email authentication, "
         "HTTPS/TLS and HTTP security headers, with evidence for every verdict.",
-        lifespan=_lifespan,
+        lifespan=lifespan,
+        # Off in production: the pages load scripts from a CDN. app.openapi() still works.
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
     )
+    app.state.scans = service
     # Added first, so CORS wraps it and a 413 still carries CORS headers.
     app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
     app.add_middleware(
@@ -456,11 +611,20 @@ def create_app(*, settings: Settings | None = None, scan: ScanFn | None = None) 
         allow_headers=["Content-Type"],
         expose_headers=["Retry-After"],
     )
+    if settings.origin_auth_enabled:
+        # Added after the others, so it runs before them: they never see a refused request.
+        app.add_middleware(OriginAuth, secrets=settings.origin_auth_secrets)
+    app.add_middleware(Sweeper, sweep=service.sweep)
     _add_problem_handlers(app)
 
     @app.get("/", response_model=ServiceInfo, summary="Service information")
     async def root() -> ServiceInfo:
-        return ServiceInfo(name="WebRiskAudit API", version=__version__, docs="/docs")
+        return ServiceInfo(
+            name="WebRiskAudit API",
+            version=__version__,
+            revision=settings.revision,
+            docs=app.docs_url,
+        )
 
     @app.get("/health", response_model=Health, summary="Liveness check")
     async def health() -> Health:
@@ -477,11 +641,13 @@ def create_app(*, settings: Settings | None = None, scan: ScanFn | None = None) 
         started = time.perf_counter()
         outcome = "cancelled"
         fields: dict[str, object] = {}
+        times = ScanTimes()
         try:
+            client, fields["client_ip_source"] = client_address(request, settings.client_ip_header)
             domain = _normalize(body.domain)
             fields["domain"] = domain
             report, source = await _unless_disconnected(
-                request, _report(service, domain, _client_ip(request))
+                request, _report(service, domain, client, times)
             )
             fields |= {
                 "cache": source,
@@ -495,8 +661,13 @@ def create_app(*, settings: Settings | None = None, scan: ScanFn | None = None) 
             outcome = problem.slug
             raise
         finally:
-            duration_ms = round((time.perf_counter() - started) * 1000)
-            entry = {"outcome": outcome, **fields, "duration_ms": duration_ms}
+            entry = {
+                "outcome": outcome,
+                **fields,
+                "queue_ms": times.queue_ms,
+                "scan_ms": times.scan_ms,
+                "duration_ms": _elapsed_ms(started),
+            }
             logger.info("scan", extra={"fields": entry})
 
     return app
@@ -509,9 +680,11 @@ def _normalize(raw: str) -> str:
         raise ProblemError(422, "invalid-domain", "Invalid domain", exc.message) from None
 
 
-async def _report(service: ScanService, domain: str, client: str) -> tuple[ScanReport, str]:
+async def _report(
+    service: ScanService, domain: str, client: str, times: ScanTimes
+) -> tuple[ScanReport, str]:
     try:
-        return await service.report(domain, client)
+        return await service.report(domain, client, times)
     except ProblemError:
         raise
     except ScanError as exc:
@@ -541,6 +714,13 @@ def _add_problem_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # Only the scan request has a body. Its input is never logged, only the error types.
+        fields = {
+            "outcome": "invalid-request",
+            "validation_errors": len(exc.errors()),
+            "error_types": sorted({str(error.get("type", "")) for error in exc.errors()}),
+        }
+        logger.info("scan", extra={"fields": fields})
         errors = [
             f"{'.'.join(str(part) for part in error.get('loc', ()))}: {error.get('msg', '')}"
             for error in exc.errors()[:3]
@@ -577,4 +757,7 @@ def _status_phrase(status: int) -> str:
         return "Error"
 
 
+# uvicorn sets up its loggers before it imports this module, so switching them
+# to JSON here also covers its first lines.
+format_uvicorn_logs_as_json()
 app = create_app()
