@@ -200,11 +200,11 @@ The API's TypeScript types (`frontend/lib/api-types.ts`) are generated from
   address, so the rate limits see the real client address.
 - The site's API URL (`NEXT_PUBLIC_API_URL`) is inlined at build time, and the
   site's Content Security Policy must allow its origin in `connect-src`, or
-  the browser blocks every scan. For Cloudflare Pages, set
-  `NEXT_PUBLIC_API_URL=https://api.webriskaudit.com` in the build settings,
+  the browser blocks every scan. The deploy workflow builds the site with the
+  repository variable `NEXT_PUBLIC_API_URL` (`https://api.webriskaudit.com`),
   the origin that [`frontend/public/_headers`](frontend/public/_headers)
-  allows, and change both together. The Docker image fills in `connect-src`
-  from its build argument.
+  allows, and refuses to deploy when they differ; change both together. The
+  Docker image fills in `connect-src` from its build argument.
 
 ## API
 
