@@ -48,15 +48,32 @@ you run a site and see this traffic:
   scanner's address. A domain's report is cached for 10 minutes, so a site
   is normally fetched at most once in 10 minutes, however many people ask.
 - **Blocking it.** You can block the address or the User-Agent. The scanner
-  does not retry requests or change its address or User-Agent; checks it
-  cannot complete are reported as inconclusive, not as failures.
+  does not retry requests or change its address or User-Agent. The email
+  checks use DNS only and are not affected. For the other checks, the
+  report depends on how the block answers:
+  - **Dropping** packets from the address: the requests time out, and the
+    TLS, redirect and header checks are reported as inconclusive and do
+    not count towards the score.
+  - **Rejecting** connections from the address, for example with a TCP
+    reset: the scanner cannot tell this from a closed port, so the TLS
+    certificate check fails ("No HTTPS service answered on port 443"), the
+    HTTP to HTTPS redirect check passes ("Port 80 is closed") and the
+    header checks are inconclusive.
+  - **Answering the User-Agent with an error status** (400 or higher): the
+    header and cookie checks are inconclusive. The TLS check is not
+    affected, since the handshake carries no User-Agent. On port 80, an
+    error page served over plain HTTP fails the redirect check; a block
+    that first redirects to HTTPS does not.
+
+  So drop rather than reject, and keep the redirect to HTTPS in front of a
+  User-Agent block; otherwise the report scores the block, not the site.
 - **Reporting a problem or asking to be excluded.** Open an issue on this
   repository, or, if you would rather not name your domain in public, use
   private vulnerability reporting as above. Give the domain and, for a
   problem, the time and what you saw. I aim to answer within 7 days. The
   scanner has no exclusion list yet, so until a requested exclusion is in
-  place, blocking the address or the User-Agent is the immediate way to
-  opt out.
+  place, blocking the address or the User-Agent as described above is the
+  immediate way to opt out.
 
 ## Responsible use
 
