@@ -5,7 +5,7 @@ import { openGraphDefaults, twitterDefaults } from "@/lib/metadata"
 
 const title = "Privacy | WebRiskAudit"
 const description =
-  "How WebRiskAudit handles data: no accounts, no cookies, no analytics and no database of scans. Scanned domains appear in the API's logs for 14 days."
+  "How WebRiskAudit handles data: no accounts, no cookies, no analytics and no database of scans. Scanned domains appear in the API's logs for 14 days, and in error reports for up to 30."
 
 const LINK = "text-orange-700 hover:text-orange-800 underline underline-offset-2 transition-colors"
 
