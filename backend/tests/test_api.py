@@ -336,7 +336,41 @@ async def test_health_and_root() -> None:
         health = await http.get("/health")
         root = await http.get("/")
     assert (health.status_code, health.json()) == (200, {"status": "ok"})
-    assert root.json() == {"name": "WebRiskAudit API", "version": __version__, "docs": "/docs"}
+    assert root.json() == {
+        "name": "WebRiskAudit API",
+        "version": __version__,
+        "revision": None,
+        "docs": "/docs",
+    }
+
+
+async def test_root_names_the_revision() -> None:
+    revision = "0123456789abcdef0123456789abcdef01234567"
+    async with client(create_app(settings=Settings(revision=revision), scan=FakeScan())) as http:
+        root = await http.get("/")
+    assert root.json()["revision"] == revision
+
+
+async def test_api_docs_are_served_by_default() -> None:
+    async with client(create_app(settings=Settings(), scan=FakeScan())) as http:
+        replies = [await http.get(path) for path in ("/docs", "/redoc", "/openapi.json")]
+    assert [reply.status_code for reply in replies] == [200, 200, 200]
+
+
+async def test_api_docs_can_be_switched_off() -> None:
+    app = create_app(settings=Settings(api_docs_enabled=False), scan=FakeScan())
+    async with client(app) as http:
+        replies = [
+            await http.get(path)
+            for path in ("/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json")
+        ]
+        root = await http.get("/")
+    for reply in replies:
+        assert reply.status_code == 404
+        assert reply.headers["content-type"] == "application/problem+json"
+    assert root.json()["docs"] is None
+    # The committed openapi.json is still produced from the app object.
+    assert app.openapi() == create_app(settings=Settings(), scan=FakeScan()).openapi()
 
 
 def test_openapi_documents_problem_responses() -> None:
@@ -363,19 +397,108 @@ async def test_one_json_log_line_per_scan_without_client_address(
         await http.post(SCAN, json={"domain": "example.com"})
         await http.post(SCAN, json={"domain": "example.com"})
         await http.post(SCAN, json={"domain": "not a domain"})
+        await http.post(SCAN, json={"domain": "x" * 2049, "extra": "secret-input"})
     lines = [
         json.loads(JsonFormatter().format(r)) for r in caplog.records if r.getMessage() == "scan"
     ]
-    assert [line.get("cache") for line in lines] == ["miss", "hit", None]
-    assert [line["outcome"] for line in lines] == ["ok", "ok", "invalid-domain"]
+    assert [line.get("cache") for line in lines] == ["miss", "hit", None, None]
+    assert [line["outcome"] for line in lines] == ["ok", "ok", "invalid-domain", "invalid-request"]
+    assert all(line["severity"] == "INFO" for line in lines)
     first = lines[0]
     assert first["domain"] == "example.com"
     assert (first["score"], first["grade"]) == (100, "A")
     assert first["coverage"] == {"scored": 1, "inconclusive": 0, "total": 1}
     assert isinstance(first["duration_ms"], int)
+    assert isinstance(first["queue_ms"], int)
+    assert isinstance(first["scan_ms"], int)
+    assert (lines[1]["queue_ms"], lines[1]["scan_ms"]) == (None, None)  # from the cache
     assert "domain" not in lines[2]  # raw input of a failed request is not logged
-    assert "198.51.100.7" not in caplog.text
-    assert all("198.51.100.7" not in json.dumps(line) for line in lines)
+    assert lines[3] == {
+        "time": lines[3]["time"],
+        "severity": "INFO",
+        "level": "info",
+        "logger": "webriskaudit.api",
+        "message": "scan",
+        "outcome": "invalid-request",
+        "validation_errors": 1,
+        "error_types": ["string_too_long"],
+    }
+    for raw in ("198.51.100.7", "not a domain", "xxxx", "secret-input"):
+        assert raw not in caplog.text
+        assert all(raw not in json.dumps(line) for line in lines)
+
+
+async def test_scan_line_times_the_wait_for_a_slot(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="webriskaudit.api")
+    scan = FakeScan(release=asyncio.Event())
+    settings = Settings(max_concurrent_scans=1, queue_timeout=0.05, rate_limit_scans=0)
+    async with client(create_app(settings=settings, scan=scan)) as http:
+        running = asyncio.create_task(http.post(SCAN, json={"domain": "one.example.com"}))
+        await asyncio.sleep(0.01)
+        late = await http.post(SCAN, json={"domain": "two.example.com"})
+        await asyncio.sleep(0.02)
+        assert scan.release is not None
+        scan.release.set()
+        await running
+    assert late.status_code == 503
+    lines = {
+        line["domain"]: line
+        for line in (
+            json.loads(JsonFormatter().format(r))
+            for r in caplog.records
+            if r.getMessage() == "scan"
+        )
+    }
+    busy, done = lines["two.example.com"], lines["one.example.com"]
+    assert busy["outcome"] == "scanner-busy"
+    assert busy["queue_ms"] >= 40  # waited for the queue timeout, then gave up
+    assert busy["scan_ms"] is None
+    assert done["outcome"] == "ok"
+    assert done["queue_ms"] < 40
+    assert done["scan_ms"] >= 20
+    assert done["duration_ms"] >= done["queue_ms"] + done["scan_ms"]
+
+
+async def test_startup_line_lists_the_settings_without_secrets(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("webriskaudit.api.configure_logging", lambda: None)
+    caplog.set_level(logging.INFO, logger="webriskaudit.api")
+    settings = Settings(
+        origin_auth_secrets=(SECRET,),
+        client_ip_header="CF-Connecting-IP",
+        api_docs_enabled=False,
+        revision="abc123",
+        dns_nameservers=("1.1.1.1", "9.9.9.10"),
+    )
+    app = create_app(settings=settings, scan=FakeScan())
+    async with app.router.lifespan_context(app):
+        pass
+    [record] = [r for r in caplog.records if r.getMessage() == "startup"]
+    line = json.loads(JsonFormatter().format(record))
+    assert line["severity"] == "INFO"
+    assert (line["version"], line["revision"]) == (__version__, "abc123")
+    assert line["allowed_origins"] == list(settings.allowed_origins)
+    assert line["rate_limit_scans"] == settings.rate_limit_scans
+    assert line["dns_nameservers"] == ["1.1.1.1", "9.9.9.10"]
+    assert (line["origin_auth"], line["origin_auth_secrets"]) == ("enabled", 1)
+    assert line["client_ip_header"] == "CF-Connecting-IP"
+    assert line["api_docs"] == "disabled"
+    assert SECRET not in caplog.text
+
+
+async def test_expired_state_is_swept_by_any_request() -> None:
+    settings = Settings(rate_limit_window=0.05, cache_ttl=0.05)
+    app = create_app(settings=settings, scan=FakeScan())
+    service = app.state.scans
+    assert isinstance(service, ScanService)
+    async with client(app) as http:
+        assert (await http.post(SCAN, json={"domain": "example.com"})).status_code == 200
+        counts = (len(service._per_client), len(service._overall), len(service._cache))
+        assert counts == (1, 1, 1)
+        await asyncio.sleep(0.06)
+        assert (await http.get("/health")).status_code == 200
+    assert (len(service._per_client), len(service._overall), len(service._cache)) == (0, 0, 0)
 
 
 # --- Abuse controls: client keys, budgets and the scan queue ---------------------------

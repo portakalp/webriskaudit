@@ -350,12 +350,32 @@
       "ServiceInfo": {
         "properties": {
           "docs": {
-            "title": "Docs",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Path of the interactive API documentation; null when it is switched off.",
+            "title": "Docs"
           },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Commit the running image was built from; null when unknown (a local run).",
+            "title": "Revision"
           },
           "version": {
             "title": "Version",
@@ -365,6 +385,7 @@
         "required": [
           "name",
           "version",
+          "revision",
           "docs"
         ],
         "title": "ServiceInfo",
