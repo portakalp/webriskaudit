@@ -1,9 +1,10 @@
 """
-SecurityAuditor.py - Production-Ready Website Security Scanner
-Follows 3 Immutable Laws:
-1. Real Browser Identity (Cloudflare Bypass)
-2. Strict Scoring Math (No Errors)
-3. Resilience & Benefit of Doubt
+Passive security posture checks for a single domain.
+
+Only public signals are read: DNS TXT records (SPF, DMARC, DKIM), DNSBL
+listings for the domain's IP, the TLS certificate on port 443, the response
+headers of the home page, and a list of common privacy-policy paths. HTTP
+requests identify themselves as WebRiskAudit.
 """
 
 import requests
@@ -20,22 +21,14 @@ from pydnsbl import DNSBLIpChecker
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# LAW #1: REAL BROWSER IDENTITY - Full Chrome Headers
+# REQUEST HEADERS
 # ============================================================================
-CHROME_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'DNT': '1',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Cache-Control': 'max-age=0',
-    'Referer': 'https://www.google.com/'
+# Accept-Encoding is left to requests, which only advertises the encodings it
+# can decode.
+REQUEST_HEADERS = {
+    'User-Agent': 'WebRiskAudit/2.1.0 (+https://github.com/portakalp/webriskaudit)',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9'
 }
 
 # Timeouts
@@ -43,8 +36,13 @@ TIMEOUT = 30  # HTTP requests - increased for production datacenter latency
 DNS_TIMEOUT = 5  # DNS lookups
 
 # ============================================================================
-# LAW #2: STRICT SCORING MATH - Explicit Point Values
+# SCORING - points each check awards when it passes
 # ============================================================================
+# Known limitation: when a check cannot complete (DNS timeout or error,
+# connection failure, no HTTP response, repeated 403s or challenge pages), most
+# checks award full points instead of failing ("benefit of the doubt").
+# Unreachable or blocking hosts therefore score higher than they should. The
+# WAF check is the exception and awards nothing when it cannot tell.
 SCORING = {
     "email": {
         "spf": 10,
@@ -148,47 +146,32 @@ DISCLOSED_SERVER_VALUES = ['apache', 'nginx', 'microsoft-iis', 'express', 'node.
 
 
 # ============================================================================
-# HELPER FUNCTIONS - Cloudflare Bypass with Retry Logic
+# HELPER FUNCTIONS
 # ============================================================================
 
-def fetch_with_retry(url: str, headers: dict, max_retries: int = 3):
+def fetch_with_retry(url: str, headers: dict, max_retries: int = 3) -> requests.Response:
     """
-    Fetch URL with exponential backoff retry logic to bypass Cloudflare blocks.
+    Fetch URL, retrying timeouts with exponential backoff.
+    Connection errors are raised at once; HTTP error responses are returned
+    as-is, not retried.
 
     Args:
         url: Target URL to fetch
         headers: HTTP headers to use
-        max_retries: Maximum number of retry attempts
+        max_retries: Total number of attempts
 
     Returns:
-        Response object if successful, None if all retries failed
+        Response object; the last error is re-raised once attempts run out
     """
     for attempt in range(max_retries):
         try:
-            response = requests.get(url, headers=headers, timeout=TIMEOUT, allow_redirects=True)
-
-            # Check if Cloudflare challenge or 403
-            if response.status_code == 403 or 'cloudflare' in response.text.lower():
-                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                logger.info(f"Cloudflare detected for {url}, waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
-                time.sleep(wait_time)
-                continue
-
-            return response
-
+            return requests.get(url, headers=headers, timeout=TIMEOUT, allow_redirects=True)
         except requests.exceptions.Timeout:
-            if attempt < max_retries - 1:
-                wait_time = 2 ** attempt
-                logger.warning(f"Timeout for {url} on attempt {attempt + 1}, retrying in {wait_time}s...")
-                time.sleep(wait_time)
-            else:
-                logger.error(f"Timeout for {url} after {max_retries} attempts")
+            if attempt == max_retries - 1:
                 raise
-        except Exception as e:
-            logger.error(f"Fetch failed for {url}: {str(e)}")
-            raise
-
-    return None
+            wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s
+            logger.warning(f"Timeout for {url} on attempt {attempt + 1}/{max_retries}, retrying in {wait_time}s")
+            time.sleep(wait_time)
 
 
 class SecurityAuditor:
@@ -229,7 +212,7 @@ class SecurityAuditor:
     def _get_http_response(self, url: str = None) -> requests.Response:
         """
         Get HTTP response with proper headers and caching.
-        Uses CHROME_HEADERS for all requests (LAW #1).
+        Uses REQUEST_HEADERS for all requests.
         """
         if url is None:
             url = f"https://{self.domain}"
@@ -239,7 +222,7 @@ class SecurityAuditor:
             return self._cached_response
 
         try:
-            response = requests.get(url, headers=CHROME_HEADERS, timeout=TIMEOUT, allow_redirects=True)
+            response = requests.get(url, headers=REQUEST_HEADERS, timeout=TIMEOUT, allow_redirects=True)
 
             # Cache main domain response
             if url == f"https://{self.domain}":
@@ -266,8 +249,9 @@ class SecurityAuditor:
     def _check_spf(self) -> dict:
         """
         Check SPF record via DNS TXT lookup.
-        LAW #2: 10 points if valid, 0 if missing
-        LAW #3: 10 points on timeout (benefit of doubt)
+        10 points if valid, 0 if no TXT record is SPF or it uses +all.
+        10 points if there are no TXT records or the lookup fails
+        (unverified, see SCORING).
         """
         try:
             answers = dns.resolver.resolve(self.domain, 'TXT', lifetime=DNS_TIMEOUT)
@@ -302,7 +286,7 @@ class SecurityAuditor:
                 }
 
         except (dns.resolver.Timeout, dns.resolver.NoNameservers, dns.resolver.NoAnswer):
-            # LAW #3: Benefit of doubt on timeout
+            # Unverified: award points on timeout, failure or no TXT records
             return {
                 "found": True,
                 "points": SCORING["email"]["spf"],
@@ -310,7 +294,7 @@ class SecurityAuditor:
                 "assumed": True
             }
         except Exception:
-            # LAW #3: Benefit of doubt on unknown errors
+            # Unverified: award points on unknown errors
             return {
                 "found": True,
                 "points": SCORING["email"]["spf"],
@@ -321,8 +305,8 @@ class SecurityAuditor:
     def _check_dmarc(self) -> dict:
         """
         Check DMARC record via DNS TXT lookup.
-        LAW #2: 10 points if reject/quarantine, 0 if none/missing
-        LAW #3: 10 points on timeout (benefit of doubt)
+        10 points if reject/quarantine, 0 if none/missing.
+        10 points if the lookup fails (unverified, see SCORING).
         """
         try:
             answers = dns.resolver.resolve(f"_dmarc.{self.domain}", 'TXT', lifetime=DNS_TIMEOUT)
@@ -359,7 +343,7 @@ class SecurityAuditor:
                 "reason": "missing"
             }
         except (dns.resolver.Timeout, dns.resolver.NoNameservers):
-            # LAW #3: Benefit of doubt on timeout
+            # Unverified: award points on timeout
             return {
                 "found": True,
                 "points": SCORING["email"]["dmarc"],
@@ -367,7 +351,7 @@ class SecurityAuditor:
                 "assumed": True
             }
         except Exception:
-            # LAW #3: Benefit of doubt on unknown errors
+            # Unverified: award points on unknown errors
             return {
                 "found": True,
                 "points": SCORING["email"]["dmarc"],
@@ -378,8 +362,8 @@ class SecurityAuditor:
     def _check_dkim(self) -> dict:
         """
         Check DKIM via DNS lookup of common selectors.
-        LAW #2: 5 points if found, 0 if missing
-        LAW #3: 5 points on timeout (benefit of doubt)
+        5 points if found, 0 if missing.
+        5 points if a lookup times out or errors (unverified, see SCORING).
         """
         try:
             for selector in DKIM_SELECTORS:
@@ -402,7 +386,7 @@ class SecurityAuditor:
                     # Try next selector
                     continue
                 except dns.resolver.Timeout:
-                    # LAW #3: Timeout on any selector = benefit of doubt
+                    # Unverified: a timeout on any selector awards points
                     return {
                         "found": True,
                         "points": SCORING["email"]["dkim"],
@@ -418,7 +402,7 @@ class SecurityAuditor:
             }
 
         except Exception:
-            # LAW #3: Benefit of doubt on unknown errors
+            # Unverified: award points on unknown errors
             return {
                 "found": True,
                 "points": SCORING["email"]["dkim"],
@@ -429,8 +413,8 @@ class SecurityAuditor:
     def _check_blacklist(self) -> dict:
         """
         Check IP reputation using DNSBLIpChecker.
-        LAW #2: 10 points if clean, 0 if blacklisted
-        LAW #3: 10 points on timeout (benefit of doubt)
+        10 points if clean, 0 if blacklisted.
+        10 points if the check fails (unverified, see SCORING).
         """
         try:
             ip = socket.gethostbyname(self.domain)
@@ -452,7 +436,7 @@ class SecurityAuditor:
                 }
 
         except (socket.timeout, socket.gaierror):
-            # LAW #3: Benefit of doubt on timeout
+            # Unverified: award points on timeout/lookup failure
             return {
                 "clean": True,
                 "points": SCORING["email"]["blacklist"],
@@ -460,7 +444,7 @@ class SecurityAuditor:
                 "assumed": True
             }
         except Exception:
-            # LAW #3: Benefit of doubt on unknown errors
+            # Unverified: award points on unknown errors
             return {
                 "clean": True,
                 "points": SCORING["email"]["blacklist"],
@@ -475,8 +459,8 @@ class SecurityAuditor:
     def _check_ssl(self) -> dict:
         """
         Check SSL certificate validity and expiration.
-        LAW #2: 10 points if valid AND >30 days remaining
-        LAW #3: 10 points on timeout (benefit of doubt)
+        10 points if valid AND >30 days remaining.
+        10 points on timeout or connection error (unverified, see SCORING).
         """
         try:
             ctx = ssl.create_default_context()
@@ -521,7 +505,7 @@ class SecurityAuditor:
                 "error": "ssl_error"
             }
         except (socket.timeout, socket.gaierror, ConnectionRefusedError, OSError):
-            # LAW #3: Benefit of doubt on timeout/connection errors
+            # Unverified: award points on timeout/connection errors
             return {
                 "valid": True,
                 "points": SCORING["server"]["ssl"],
@@ -529,7 +513,7 @@ class SecurityAuditor:
                 "assumed": True
             }
         except Exception:
-            # LAW #3: Benefit of doubt on unknown errors
+            # Unverified: award points on unknown errors
             return {
                 "valid": True,
                 "points": SCORING["server"]["ssl"],
@@ -540,8 +524,8 @@ class SecurityAuditor:
     def _check_waf(self) -> dict:
         """
         Detect WAF via IP ranges and headers.
-        LAW #2: 10 points if detected, 0 if not
-        LAW #3: 0 points on timeout (cannot assume WAF exists)
+        10 points if detected, 0 if not.
+        0 points if the check cannot complete.
         """
         waf_type = None
 
@@ -596,13 +580,14 @@ class SecurityAuditor:
     def _check_server_identity(self) -> dict:
         """
         Check if server identity is masked.
-        LAW #2: 10 points if masked, 0 if disclosed
-        LAW #3: 10 points on timeout (benefit of doubt)
+        10 points if masked, 0 if disclosed.
+        10 points if there is no HTTP response or the value is unrecognized
+        (unverified, see SCORING).
         """
         response = self._get_http_response()
 
         if not response:
-            # LAW #3: Benefit of doubt on timeout
+            # Unverified: award points when there is no HTTP response
             return {
                 "masked": True,
                 "points": SCORING["server"]["server_identity"],
@@ -638,7 +623,7 @@ class SecurityAuditor:
                 "reason": "server_disclosed"
             }
 
-        # Unknown value = benefit of doubt
+        # Unrecognized value: award points (unverified)
         return {
             "masked": True,
             "points": SCORING["server"]["server_identity"],
@@ -649,13 +634,13 @@ class SecurityAuditor:
     def _check_security_headers(self) -> dict:
         """
         Check 5 critical security headers.
-        LAW #2: count >= 4 = 20 pts, else count * 5 pts
-        LAW #3: 20 points on timeout (benefit of doubt)
+        count >= 4 = 20 pts, else count * 5 pts.
+        20 points if there is no HTTP response (unverified, see SCORING).
         """
         response = self._get_http_response()
 
         if not response:
-            # LAW #3: Benefit of doubt on timeout
+            # Unverified: award points when there is no HTTP response
             return {
                 "count": 5,
                 "points": SCORING["server"]["security_headers"],
@@ -680,7 +665,7 @@ class SecurityAuditor:
             else:
                 found_headers[required] = False
 
-        # LAW #2: Strict scoring math
+        # 4 or more headers earn full points
         if count >= 4:
             points = SCORING["server"]["security_headers"]
         else:
@@ -699,8 +684,9 @@ class SecurityAuditor:
     def _check_privacy_policy(self) -> dict:
         """
         Check for privacy policy page.
-        LAW #2: 10 points if found, 0 if missing
-        LAW #3: 10 points on timeout/block (benefit of doubt)
+        10 points if found, 0 if missing.
+        10 points on timeout, connection error, or three consecutive 403s or
+        challenge pages (unverified, see SCORING).
         """
         consecutive_failures = 0
         MAX_CONSECUTIVE_FAILURES = 3
@@ -709,15 +695,16 @@ class SecurityAuditor:
             try:
                 url = f"https://{self.domain}{path}"
 
-                # Use retry logic to bypass Cloudflare blocks
-                response = fetch_with_retry(url, CHROME_HEADERS)
+                response = fetch_with_retry(url, REQUEST_HEADERS)
 
-                if response is None:
-                    logger.warning(f"Privacy check: {url} → All retries failed")
+                # Debug logging
+                logger.info(f"Privacy check: {url} → Status {response.status_code}, Length {len(response.content)} bytes")
+
+                if response.status_code == 403:
                     consecutive_failures += 1
                     if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                         logger.warning(f"Aborting privacy check due to {consecutive_failures} consecutive failures (likely WAF/Cloudflare block).")
-                         return {
+                        logger.warning(f"Aborting privacy check after {consecutive_failures} consecutive 403 responses.")
+                        return {
                             "found": True,
                             "points": SCORING["compliance"]["privacy_policy"],
                             "error": "too_many_blocks",
@@ -725,11 +712,8 @@ class SecurityAuditor:
                         }
                     continue
 
-                # Debug logging
-                logger.info(f"Privacy check: {url} → Status {response.status_code}, Length {len(response.content)} bytes")
-
                 if response.status_code == 200:
-                    # Check if it's actually privacy policy content (not Cloudflare challenge)
+                    # A challenge page is not privacy policy content
                     content_lower = response.text.lower()
 
                     if 'challenge' in content_lower and 'cloudflare' in content_lower:
@@ -761,7 +745,7 @@ class SecurityAuditor:
 
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
                 logger.warning(f"Privacy check timeout/connection error for {url}: {str(e)}")
-                # LAW #3: Benefit of doubt on timeout
+                # Unverified: award points on timeout/connection errors
                 return {
                     "found": True,
                     "points": SCORING["compliance"]["privacy_policy"],
@@ -809,7 +793,7 @@ class SecurityAuditor:
             "privacy_policy": self._check_privacy_policy()
         }
 
-        # Calculate category scores (LAW #2: Strict math)
+        # Calculate category scores
         email_score = sum(d["points"] for d in email_details.values())
         server_score = sum(d["points"] for d in server_details.values())
         compliance_score = sum(d["points"] for d in compliance_details.values())
