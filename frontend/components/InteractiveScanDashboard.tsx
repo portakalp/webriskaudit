@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { CheckCircle } from "lucide-react"
 import { NetworkGraph } from "./scan-dashboard/NetworkGraph"
 import { MetricCard } from "./scan-dashboard/MetricCard"
@@ -51,15 +51,11 @@ const initialState: DashboardState = {
 export function InteractiveScanDashboard({ onComplete }: InteractiveScanDashboardProps) {
   const [state, setState] = useState<DashboardState>(initialState)
   const [progressPercentage, setProgressPercentage] = useState(0)
-  const animationStartedRef = useRef(false)
-  const timersRef = useRef<NodeJS.Timeout[]>([])
 
-  // Main animation orchestrator
+  // Main animation orchestrator. Cleanup clears every pending timer, so a
+  // re-run (StrictMode mounts effects twice in development) starts over.
   useEffect(() => {
-    // Prevent running animation multiple times
-    if (animationStartedRef.current) return
-    animationStartedRef.current = true
-
+    const timers: ReturnType<typeof setTimeout>[] = []
     let phaseIndex = 0
     const totalDuration = SCAN_PHASES.reduce((sum, phase) => sum + phase.duration, 0)
     let elapsedTime = 0
@@ -94,16 +90,12 @@ export function InteractiveScanDashboard({ onComplete }: InteractiveScanDashboar
         runPhase()
       }, phase.duration)
 
-      timersRef.current.push(timer)
+      timers.push(timer)
     }
 
     runPhase()
 
-    // Cleanup function to clear all timers
-    return () => {
-      timersRef.current.forEach(timer => clearTimeout(timer))
-      timersRef.current = []
-    }
+    return () => timers.forEach(clearTimeout)
   }, [])
 
   // Call onComplete when progress reaches 100%
