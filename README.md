@@ -13,8 +13,9 @@ behind it.
 > See [Project history](#project-history), the
 > [known limitations](#known-limitations) and the [roadmap](#roadmap).
 
-Live site: https://webriskaudit.com. The scanner API is offline during the
-rebuild.
+Live site: https://webriskaudit.com. Until the v2 cutover
+([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), "Cutover of webriskaudit.com")
+it still serves the v1 site, whose scanner API is offline.
 
 ## What it checks
 
