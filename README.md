@@ -247,8 +247,10 @@ Browser
   `DEPLOY_SITE` is `true`. `.github/workflows/rollback-api.yml` moves the
   API's traffic to a chosen revision.
 - **Logs**: application logs go to a log bucket in europe-west1 and are
-  kept for 14 days. Cloud Run's request logs, which contain client
-  addresses, are excluded, and the load balancer logs no requests.
+  kept for 14 days. Error Reporting can keep unexpected errors, which name
+  the scanned domain, for up to 30 days. Cloud Run's request logs, which
+  contain client addresses, are excluded, and the load balancer logs no
+  requests.
 
 ### Production settings
 
@@ -365,8 +367,8 @@ only the number and types of validation errors. It never logs client IP
 addresses or request bodies, and switches off uvicorn's access log, which
 would record client addresses. The image also turns off uvicorn's WebSocket
 support, which would log the client address and path of every WebSocket
-handshake. In production the logs are kept for 14 days (see
-[Deployment](#deployment)).
+handshake. In production the logs are kept for 14 days, and unexpected
+errors for up to 30 days in Error Reporting (see [Deployment](#deployment)).
 
 ## Roadmap
 

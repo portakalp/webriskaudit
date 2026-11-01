@@ -59,5 +59,6 @@ maintaining infrastructure for it.
   logs, and a scanned domain can itself identify a person (a personal
   domain). The privacy note has to describe these. Log retention is set in
   the deployment: in production the platform's request logs, which hold
-  client addresses, are not stored, and application logs are kept for 14
-  days ([ADR 0007](0007-api-on-cloud-run.md)).
+  client addresses, are not stored, application logs are kept for 14 days
+  ([ADR 0007](0007-api-on-cloud-run.md)), and Error Reporting keeps
+  unexpected errors, which name the domain, for up to 30 days.
