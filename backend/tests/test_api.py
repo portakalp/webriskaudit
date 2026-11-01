@@ -342,8 +342,8 @@ async def test_health_and_root() -> None:
 def test_openapi_documents_problem_responses() -> None:
     schema = create_app(settings=Settings(), scan=FakeScan()).openapi()
     responses = schema["paths"][SCAN]["post"]["responses"]
-    assert set(responses) == {"200", "413", "422", "429", "500", "502", "503"}
-    for status in ("413", "422", "429", "500", "502", "503"):
+    assert set(responses) == {"200", "400", "403", "413", "422", "429", "500", "502", "503"}
+    for status in ("400", "403", "413", "422", "429", "500", "502", "503"):
         content = responses[status]["content"]
         assert list(content) == ["application/problem+json"]
         assert content["application/problem+json"]["schema"] == {
@@ -581,6 +581,198 @@ async def test_running_scan_finishes_and_is_cached_after_its_client_disconnects(
     async with client(app) as http:
         assert (await http.post(SCAN, json={"domain": "example.com"})).status_code == 200
     assert scan.calls == ["example.com"]  # the second request was a cache hit
+
+
+# --- Origin authentication and the client address ---------------------------------------
+
+SECRET = "s" * 32
+NEW_SECRET = "n" * 64
+BEHIND_PROXY = Settings(
+    rate_limit_scans=1, origin_auth_secrets=(SECRET,), client_ip_header="CF-Connecting-IP"
+)
+
+
+def via_proxy(address: str, secret: str = SECRET, **extra: str) -> dict[str, str]:
+    """Headers of a request that passed through the proxy."""
+    return {"X-Origin-Auth": secret, "CF-Connecting-IP": address, **extra}
+
+
+async def test_spoofed_forwarded_for_is_ignored_without_a_proxy() -> None:
+    app = create_app(settings=Settings(rate_limit_scans=1), scan=FakeScan())
+    async with client(app, ip="198.51.100.7") as http:
+        first = await http.post(
+            SCAN, json={"domain": "one.example.com"}, headers={"X-Forwarded-For": "203.0.113.1"}
+        )
+        second = await http.post(
+            SCAN,
+            json={"domain": "two.example.com"},
+            headers={"X-Forwarded-For": "203.0.113.2", "CF-Connecting-IP": "203.0.113.3"},
+        )
+    assert first.status_code == 200
+    problem(second, 429, "rate-limited")  # one client: the TCP peer
+
+
+async def test_client_address_comes_from_the_proxy_header() -> None:
+    scan = FakeScan()
+    app = create_app(settings=BEHIND_PROXY, scan=scan)
+    async with client(app, ip="10.0.0.1") as http:  # every request comes from the proxy
+        first = await http.post(
+            SCAN, json={"domain": "one.example.com"}, headers=via_proxy("198.51.100.1")
+        )
+        other = await http.post(
+            SCAN, json={"domain": "two.example.com"}, headers=via_proxy("198.51.100.2")
+        )
+        spoofed = await http.post(
+            SCAN,
+            json={"domain": "three.example.com"},
+            headers=via_proxy("198.51.100.1", **{"X-Forwarded-For": "203.0.113.9"}),
+        )
+    assert (first.status_code, other.status_code) == (200, 200)
+    problem(spoofed, 429, "rate-limited")  # X-Forwarded-For does not make a new client
+    assert scan.calls == ["one.example.com", "two.example.com"]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"CF-Connecting-IP": "198.51.100.1"},
+        {"X-Origin-Auth": "wrong", "CF-Connecting-IP": "198.51.100.1"},
+        {"X-Origin-Auth": SECRET[:-1], "CF-Connecting-IP": "198.51.100.1"},
+        {"X-Origin-Auth": SECRET + "x", "CF-Connecting-IP": "198.51.100.1"},
+        {"X-Origin-Auth": "", "CF-Connecting-IP": "198.51.100.1"},
+    ],
+)
+async def test_request_without_the_secret_is_forbidden(headers: dict[str, str]) -> None:
+    scan = FakeScan()
+    async with client(create_app(settings=BEHIND_PROXY, scan=scan)) as http:
+        reply = await http.post(SCAN, json={"domain": "example.com"}, headers=headers)
+    problem(reply, 403, "forbidden")
+    assert scan.calls == []
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        [(b"x-origin-auth", b"wrong"), (b"x-origin-auth", SECRET.encode())],
+        [(b"x-origin-auth", "ş".encode() * 16)],  # not ASCII
+    ],
+)
+async def test_repeated_or_non_ascii_secret_header_is_forbidden(
+    headers: list[tuple[bytes, bytes]],
+) -> None:
+    async with client(create_app(settings=BEHIND_PROXY, scan=FakeScan())) as http:
+        reply = await http.post(
+            SCAN,
+            json={"domain": "example.com"},
+            headers=[*headers, (b"cf-connecting-ip", b"198.51.100.1")],
+        )
+    problem(reply, 403, "forbidden")
+
+
+async def test_every_route_but_health_and_root_needs_the_secret() -> None:
+    async with client(create_app(settings=BEHIND_PROXY, scan=FakeScan())) as http:
+        health = await http.get("/health")
+        root = await http.get("/")
+        refused = [
+            await http.post("/health"),
+            await http.get("/docs"),
+            await http.get("/openapi.json"),
+            await http.get("/api/v1/nothing"),
+            await http.options(SCAN, headers=preflight(ALLOWED_ORIGIN)),
+        ]
+    assert (health.status_code, root.status_code) == (200, 200)
+    for reply in refused:
+        problem(reply, 403, "forbidden")
+
+
+async def test_two_secrets_allow_a_rotation() -> None:
+    settings = Settings(
+        origin_auth_secrets=(SECRET, NEW_SECRET), client_ip_header="CF-Connecting-IP"
+    )
+    async with client(create_app(settings=settings, scan=FakeScan())) as http:
+        old = await http.post(
+            SCAN, json={"domain": "one.example.com"}, headers=via_proxy("198.51.100.1")
+        )
+        new = await http.post(
+            SCAN, json={"domain": "two.example.com"}, headers=via_proxy("198.51.100.2", NEW_SECRET)
+        )
+        other = await http.post(
+            SCAN, json={"domain": "three.example.com"}, headers=via_proxy("198.51.100.3", "o" * 32)
+        )
+    assert (old.status_code, new.status_code) == (200, 200)
+    problem(other, 403, "forbidden")
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "third"),
+    [
+        ("2001:db8:1:2::1", "2001:db8:1:2:ffff::9", "2001:db8:1:3::1"),
+        # Cloudflare's address for requests from Workers on other zones: one client.
+        ("2a06:98c0:3600::103", "2a06:98c0:3600::103", "2a06:98c0:3601::103"),
+        ("::ffff:198.51.100.7", "198.51.100.7", "198.51.100.8"),
+    ],
+)
+async def test_proxy_header_addresses_are_keyed_like_peers(
+    first: str, second: str, third: str
+) -> None:
+    async with client(create_app(settings=BEHIND_PROXY, scan=FakeScan())) as http:
+        replies = [
+            await http.post(SCAN, json={"domain": f"s{n}.example.com"}, headers=via_proxy(address))
+            for n, address in enumerate((first, second, third))
+        ]
+    assert [reply.status_code for reply in replies] == [200, 429, 200]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"X-Origin-Auth": SECRET},
+        via_proxy(""),
+        via_proxy("unknown"),
+        via_proxy("198.51.100.1, 203.0.113.9"),
+        via_proxy("198.51.100.256"),
+        via_proxy("2001:db8::/64"),
+    ],
+)
+async def test_missing_or_invalid_client_address_is_a_400(headers: dict[str, str]) -> None:
+    scan = FakeScan()
+    async with client(create_app(settings=BEHIND_PROXY, scan=scan)) as http:
+        reply = await http.post(SCAN, json={"domain": "example.com"}, headers=headers)
+    body = problem(reply, 400, "invalid-client-ip")
+    assert body["detail"] == "The proxy in front of the API did not pass a valid client address."
+    assert scan.calls == []
+
+
+async def test_repeated_client_address_header_is_a_400() -> None:
+    async with client(create_app(settings=BEHIND_PROXY, scan=FakeScan())) as http:
+        reply = await http.post(
+            SCAN,
+            json={"domain": "example.com"},
+            headers=[
+                ("X-Origin-Auth", SECRET),
+                ("CF-Connecting-IP", "198.51.100.1"),
+                ("CF-Connecting-IP", "198.51.100.2"),
+            ],
+        )
+    problem(reply, 400, "invalid-client-ip")
+
+
+async def test_scan_line_names_the_address_source_but_not_the_address(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="webriskaudit.api")
+    peer_app = create_app(settings=Settings(), scan=FakeScan())
+    async with client(peer_app, ip="198.51.100.7") as http:
+        await http.post(SCAN, json={"domain": "example.com"})
+    async with client(create_app(settings=BEHIND_PROXY, scan=FakeScan())) as http:
+        await http.post(SCAN, json={"domain": "example.org"}, headers=via_proxy("203.0.113.9"))
+    lines = [
+        json.loads(JsonFormatter().format(r)) for r in caplog.records if r.getMessage() == "scan"
+    ]
+    assert [line["client_ip_source"] for line in lines] == ["peer", "header"]
+    for address in ("198.51.100.7", "203.0.113.9", SECRET):
+        assert address not in caplog.text
+        assert all(address not in json.dumps(line) for line in lines)
 
 
 # --- Request size ---------------------------------------------------------------------

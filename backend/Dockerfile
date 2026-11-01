@@ -45,13 +45,9 @@ RUN groupadd --gid 10001 webriskaudit \
 # Owned by root, so the service cannot modify its own code.
 COPY --from=build /app/.venv /app/.venv
 
-# FORWARDED_ALLOW_IPS: addresses of the reverse proxies whose X-Forwarded-For
-# header is trusted for the client address (the rate limit key). Set it to the
-# proxy's address when deploying behind one.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    FORWARDED_ALLOW_IPS=127.0.0.1
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 USER 10001:10001
@@ -62,4 +58,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --start-interval=1s -
 
 # One worker per container: the rate limit and the report cache live in
 # process memory. "exec" makes uvicorn PID 1, so it receives SIGTERM.
-CMD ["/bin/sh", "-c", "exec uvicorn webriskaudit.api:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS:-127.0.0.1}\""]
+# X-Forwarded-For is never trusted (--no-proxy-headers): behind a proxy, the
+# client address comes from CLIENT_IP_HEADER with origin authentication
+# (docs/adr/0006-client-ip-behind-cloudflare.md).
+CMD ["/bin/sh", "-c", "exec uvicorn webriskaudit.api:app --host 0.0.0.0 --port 8000 --no-proxy-headers"]

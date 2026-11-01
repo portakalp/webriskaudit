@@ -28,7 +28,7 @@ openapi: ## Regenerate backend/openapi.json and frontend/lib/api-types.ts
 	cd frontend && pnpm gen:api
 
 dev-api: ## Run the API with auto-reload on http://localhost:8000
-	cd backend && uv run uvicorn webriskaudit.api:app --reload --port 8000
+	cd backend && uv run uvicorn webriskaudit.api:app --reload --port 8000 --no-proxy-headers
 
 dev-web: ## Run the site in development mode on http://localhost:3000
 	cd frontend && pnpm dev

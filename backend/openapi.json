@@ -434,6 +434,26 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The proxy in front of the API passed no valid client address (invalid-client-ip). Only with origin authentication on."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The request did not come through the proxy in front of the API (forbidden). Only with origin authentication on, and for every route except GET / and GET /health."
+          },
           "413": {
             "content": {
               "application/problem+json": {
