@@ -1,6 +1,6 @@
 """WebRiskAudit: a passive security posture scanner for domains."""
 
-__version__ = "2.0.0.dev0"
+__version__ = "2.0.0"
 
 USER_AGENT = f"WebRiskAudit/{__version__} (+https://github.com/portakalp/webriskaudit)"
 

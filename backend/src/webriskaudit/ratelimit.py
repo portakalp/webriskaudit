@@ -35,7 +35,8 @@ class RateLimiter:
     A refused hit is not recorded, so retrying early does not extend the wait.
     A ``limit`` of 0 turns the limiter off. At most ``max_keys`` keys are
     tracked: past that, the least recently active key is forgotten, which
-    bounds memory at the cost of being lenient to that key.
+    bounds memory at the cost of being lenient to that key. A key whose hits
+    have all left the window is forgotten on the next ``hit`` or ``sweep``.
     """
 
     def __init__(
@@ -52,7 +53,6 @@ class RateLimiter:
         self._clock = clock
         self._hits: dict[str, deque[float]] = {}
         """Key -> hit times, least recently active key first."""
-        self._next_sweep = 0.0
 
     @property
     def enabled(self) -> bool:
@@ -92,11 +92,15 @@ class RateLimiter:
         """Number of keys currently tracked."""
         return len(self._hits)
 
+    def sweep(self) -> None:
+        """Forget keys whose hits have all left the window. Cheap enough for every request."""
+        self._sweep(self._clock())
+
     def _sweep(self, now: float) -> None:
-        """Forget keys whose hits have all expired, at most once per window."""
-        if now < self._next_sweep:
-            return
-        self._next_sweep = now + self._window
+        # Keys are ordered by their latest hit, so the expired ones come first.
         cutoff = now - self._window
-        for key in [key for key, hits in self._hits.items() if not hits or hits[-1] <= cutoff]:
+        while self._hits:
+            key, hits = next(iter(self._hits.items()))
+            if hits and hits[-1] > cutoff:
+                return
             del self._hits[key]

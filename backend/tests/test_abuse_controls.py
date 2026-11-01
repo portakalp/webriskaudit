@@ -65,6 +65,33 @@ def test_idle_keys_are_forgotten() -> None:
     assert len(limiter) == 1
 
 
+def test_sweep_forgets_expired_keys_without_a_new_hit() -> None:
+    clock = Clock()
+    limiter = RateLimiter(5, 60, clock=clock)
+    limiter.hit("a")
+    limiter.hit("b")
+    clock.now += 30
+    limiter.hit("c")
+    limiter.hit("a")  # active again: now the most recent key
+    clock.now += 31
+    limiter.sweep()
+    assert len(limiter) == 2  # b expired; a and c each have a hit in the window
+    assert limiter.wait("b") is None
+    clock.now += 30
+    limiter.sweep()
+    assert len(limiter) == 0
+
+
+def test_sweep_forgets_a_key_emptied_by_wait() -> None:
+    clock = Clock()
+    limiter = RateLimiter(1, 60, clock=clock)
+    limiter.hit("a")
+    clock.now += 61
+    assert limiter.wait("a") is None
+    limiter.sweep()
+    assert len(limiter) == 0
+
+
 def test_wait_records_nothing() -> None:
     clock = Clock()
     limiter = RateLimiter(1, 60, clock=clock)
@@ -158,6 +185,21 @@ async def test_cancelled_work_is_not_cached() -> None:
     with pytest.raises(asyncio.CancelledError):
         await task
     assert (cache.running("k"), cache.get("k")) == (None, None)
+
+
+async def test_sweep_drops_expired_results() -> None:
+    clock = Clock()
+    cache: ResultCache[str] = ResultCache(60, clock=clock)
+    await cache.start("a", value("a"))
+    clock.now += 30
+    await cache.start("b", value("b"))
+    clock.now += 30
+    cache.sweep()
+    assert len(cache) == 1
+    assert cache.get("b") == "b"
+    clock.now += 30
+    cache.sweep()
+    assert len(cache) == 0
 
 
 async def test_zero_ttl_caches_nothing() -> None:
