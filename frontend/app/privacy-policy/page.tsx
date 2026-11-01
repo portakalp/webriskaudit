@@ -71,6 +71,16 @@ export default function PrivacyPolicyPage() {
               http:// and https:// home page, following up to 5 redirects. Nothing else is requested: no link
               crawling, port scanning or login attempts. The requests are made from the API server and name
               WebRiskAudit in their user agent, so the scanned site sees the server&apos;s address, not yours.
+              The DNS lookups go through the public resolvers of Cloudflare (1.1.1.1) and Quad9 (9.9.9.10),
+              which see the domain but not your IP address and handle it under their own privacy policies (
+              <a href="https://developers.cloudflare.com/1.1.1.1/privacy/public-dns-resolver/" className={LINK}>
+                Cloudflare
+              </a>
+              ,{" "}
+              <a href="https://quad9.net/privacy/policy/" className={LINK}>
+                Quad9
+              </a>
+              ).
             </p>
             <p className="text-slate-700 leading-relaxed mb-4">
               The API keeps no database of scans. A finished report is answered from the API&apos;s memory for
