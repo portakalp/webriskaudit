@@ -3,6 +3,3 @@ uvicorn
 requests
 dnspython
 pydnsbl
-colorama
-beautifulsoup4
-python-dotenv
