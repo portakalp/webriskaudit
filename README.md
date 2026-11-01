@@ -8,8 +8,9 @@ behind it.
 
 > **Status: v2 rebuild in progress.** v1 was a commercial MVP. This repository
 > is being rebuilt in the open as a non-commercial project. The v2 scanner
-> engine, the API and the website's v2 report view are in place; deploying
-> them is the next step. See [Project history](#project-history), the
+> engine, the API, the website's v2 report view and the
+> [deployment](#deployment) setup are in place; going live is the next step.
+> See [Project history](#project-history), the
 > [known limitations](#known-limitations) and the [roadmap](#roadmap).
 
 Live site: https://webriskaudit.com. The scanner API is offline during the
@@ -119,14 +120,17 @@ new scan may first wait up to 30 seconds for a free slot.
   are not enumerated. A server that only offers TLS 1.0 or 1.1 fails the
   handshake and the check.
 - **Abuse controls are per process.** The rate limit and report cache live in
-  memory, so they reset on restart and are not shared between workers.
+  memory, so they reset on every restart and deploy and are not shared
+  between processes. Production runs one process on one instance.
 
 ## Repository layout
 
 ```
 backend/      FastAPI service and the scanner package (src/webriskaudit)
 frontend/     Next.js static site served at webriskaudit.com
-docs/         Methodology, threat model and architecture decisions (docs/adr/)
+docs/         Methodology, threat model, deployment runbook, decisions (docs/adr/)
+infra/gcp/    Terraform for the API's Google Cloud project (docs/DEPLOYMENT.md)
+deploy/       Cloud Run service spec, egress firewall check, post-deploy smoke tests
 compose.yaml  Local Docker stack: the site and the API
 Makefile      Common tasks; run "make" to list them
 ```
@@ -143,10 +147,12 @@ Backend (Python 3.12, [uv](https://docs.astral.sh/uv/)):
 ```bash
 cd backend
 uv sync
-uv run uvicorn webriskaudit.api:app --reload --port 8000
+uv run uvicorn webriskaudit.api:app --reload --port 8000 --no-proxy-headers --ws none
 ```
 
-Interactive API docs are at http://localhost:8000/docs. Settings are read
+The two flags match the Docker image: uvicorn trusts no `X-Forwarded-For`
+header and has no WebSocket support. Interactive API docs are at
+http://localhost:8000/docs unless `API_DOCS_ENABLED=false`. Settings are read
 from environment variables, listed with their defaults in
 [`backend/.env.example`](backend/.env.example). Certificates are verified
 against the [certifi](https://pypi.org/project/certifi/) CA bundle, so no
@@ -190,19 +196,103 @@ The API's TypeScript types (`frontend/lib/api-types.ts`) are generated from
 `backend/openapi.json`. After an API change, run `make openapi`, which runs
 `scripts/export_openapi.py` in `backend/` and `pnpm gen:api` in `frontend/`.
 
-### Deployment notes
+## Deployment
 
-- The API image (`backend/Dockerfile`) runs uvicorn with `--proxy-headers`
-  and trusts `X-Forwarded-For` only from the addresses in
-  `FORWARDED_ALLOW_IPS` (default `127.0.0.1`). Set it to the reverse proxy's
-  address, so the rate limits see the real client address.
-- The site's API URL (`NEXT_PUBLIC_API_URL`) is inlined at build time, and the
-  site's Content Security Policy must allow its origin in `connect-src`, or
-  the browser blocks every scan. For Cloudflare Pages, set
-  `NEXT_PUBLIC_API_URL=https://api.webriskaudit.com` in the build settings,
-  the origin that [`frontend/public/_headers`](frontend/public/_headers)
-  allows, and change both together. The Docker image fills in `connect-src`
-  from its build argument.
+The production setup is in this repository.
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) is the runbook: the one-time setup
+the owner does by hand, the first deploy and its checks, rollback, secret
+rotation, monitoring and costs.
+
+```
+Browser
+ |-- webriskaudit.com -----> Cloudflare: Worker webriskaudit-web
+ |                           (static files from frontend/out)
+ '-- api.webriskaudit.com -> Cloudflare: sets X-Origin-Auth, CF-Connecting-IP
+       -> Google external Application Load Balancer (global, TLS 1.2+)
+       -> Cloud Run webriskaudit-api (europe-west1, exactly 1 instance)
+       -> VPC egress firewall -> Cloud NAT (one static address)
+       -> scanned sites (TCP 80, 443) and resolvers 1.1.1.1, 9.9.9.10 (DNS)
+```
+
+- **Site** ([ADR 0008](docs/adr/0008-site-on-workers-static-assets.md)):
+  Cloudflare Workers static assets serve the static export
+  (`frontend/wrangler.jsonc`) with the headers from
+  [`frontend/public/_headers`](frontend/public/_headers). No Worker script
+  runs.
+- **API** ([ADR 0007](docs/adr/0007-api-on-cloud-run.md)): Cloud Run with
+  manual scaling of exactly one instance, because the rate limits, the
+  queue and the cache live in memory. Ingress is limited to the load
+  balancer and internal traffic, so the `run.app` URL is closed to the
+  internet. All outbound traffic goes through a VPC whose egress firewall
+  allows TCP 80 and 443 anywhere and DNS to the two resolvers only, and
+  denies private and special-purpose ranges. Cloud NAT gives the scanner
+  one fixed address ([SECURITY.md](SECURITY.md)).
+- **Client address** ([ADR 0006](docs/adr/0006-client-ip-behind-cloudflare.md)):
+  a Cloudflare Transform Rule sends a secret in `X-Origin-Auth`. The API
+  answers 403 to any request without it, except `GET /` and `GET /health`,
+  so the client address it reads from `CF-Connecting-IP` comes from
+  Cloudflare. `X-Forwarded-For` is never read.
+- **Configuration**: Terraform in `infra/gcp/` (network, firewall, NAT,
+  load balancer, certificate, image registry, IAM, Workload Identity
+  Federation, the secret without its value, logging, monitoring) and the
+  service spec in `deploy/cloudrun/service.yaml`. The Cloudflare rules and
+  the secret's value are set by hand, as the runbook describes.
+- **Deploys**: after every CI job passes on `main`, the `deploy-api` job in
+  `.github/workflows/ci.yml` signs in with Workload Identity Federation (no
+  stored key), builds and pushes the image, deploys it by digest, runs
+  `deploy/checks/api_smoke.sh`, and moves traffic back to the previous
+  revision if the deploy or the smoke test fails. `deploy-site` then builds
+  the site and runs `wrangler deploy` and `deploy/checks/site_smoke.sh`.
+  Each job runs only when the repository variable `DEPLOY_API` or
+  `DEPLOY_SITE` is `true`. `.github/workflows/rollback-api.yml` moves the
+  API's traffic to a chosen revision.
+- **Logs**: application logs go to a log bucket in europe-west1 and are
+  kept for 14 days. Cloud Run's request logs, which contain client
+  addresses, are excluded, and the load balancer logs no requests.
+
+### Production settings
+
+The API reads its settings from environment variables, listed with their
+defaults in [`backend/.env.example`](backend/.env.example). Besides
+`ALLOWED_ORIGINS=https://webriskaudit.com` and
+`DNS_NAMESERVERS=1.1.1.1,9.9.9.10` (Quad9's `9.9.9.9` filters domains,
+which then look nonexistent), production sets:
+
+- `ORIGIN_AUTH_SECRETS`, from the Secret Manager secret
+  `webriskaudit-origin-auth`: the accepted values of `X-Origin-Auth`,
+  comma-separated so that an old and a new secret both work during a
+  rotation, each at least 32 visible ASCII characters (for example from
+  `openssl rand -hex 32`). When set, every route except `GET /` and
+  `GET /health` answers 403 without one. Empty, the default, turns origin
+  authentication off, as for local runs.
+- `CLIENT_IP_HEADER=CF-Connecting-IP`: the header holding the client's
+  address, the key of the rate limits. It must arrive once and hold one IP
+  address, or the scan gets 400. It is required with `ORIGIN_AUTH_SECRETS`
+  and refused without it; when both are empty, the client is the TCP peer.
+- `API_DOCS_ENABLED=false`: no `/docs`, `/redoc` or `/openapi.json`
+  (default `true`). The documentation pages load scripts from a CDN;
+  [`backend/openapi.json`](backend/openapi.json) documents the API either
+  way.
+
+The rate limit, cache, queue and timeout settings keep their defaults.
+Invalid values stop the API at startup, and the API logs its effective
+settings, without secrets, in one `startup` line. `GET /` reports the
+commit the image was built from as `revision`.
+
+Two variables are read by the image's start command, not by the API:
+
+- `PORT` (default 8000): the port uvicorn listens on and the image's Docker
+  health check calls. Cloud Run sets it from the container port, 8000.
+- `GRACEFUL_SHUTDOWN_SECONDS` (default 8): how long requests in flight may
+  run after SIGTERM. Cloud Run stops the container 10 seconds after SIGTERM.
+
+The site's API URL (`NEXT_PUBLIC_API_URL`) is inlined at build time, and the
+site's Content Security Policy must allow its origin in `connect-src`, or
+the browser blocks every scan. The deploy workflow builds the site with the
+repository variable `NEXT_PUBLIC_API_URL` (`https://api.webriskaudit.com`),
+the origin that [`frontend/public/_headers`](frontend/public/_headers)
+allows, and refuses to deploy when they differ; change both together. The
+Docker image fills in `connect-src` from its build argument.
 
 ## API
 
@@ -216,8 +306,8 @@ curl -s -X POST http://localhost:8000/api/v1/scan \
 | ------ | --------------- | --------------------------------------------------- |
 | `POST` | `/api/v1/scan`  | Scan a domain and return the report                 |
 | `GET`  | `/health`       | Liveness check                                      |
-| `GET`  | `/`             | Service name and version                            |
-| `GET`  | `/docs`         | Interactive OpenAPI documentation                   |
+| `GET`  | `/`             | Service name, version, revision and docs path       |
+| `GET`  | `/docs`         | Interactive docs; off with `API_DOCS_ENABLED=false` |
 
 The OpenAPI document is committed as
 [`backend/openapi.json`](backend/openapi.json), together with the TypeScript
@@ -240,6 +330,8 @@ details (`application/problem+json`) with `type`, `title`, `status` and
 |    422 | `invalid-request`   | The body is not `{"domain": "<string>"}`                    |
 |    422 | `domain-not-found`  | The domain does not exist (NXDOMAIN)                        |
 |    422 | `non-public-target` | The domain resolves to a private or reserved address        |
+|    400 | `invalid-client-ip` | No valid client address in the proxy's `CLIENT_IP_HEADER`   |
+|    403 | `forbidden`         | The request did not come through the proxy (origin auth)    |
 |    413 | `request-too-large` | The request body is larger than 8 kB                        |
 |    429 | `rate-limited`      | Too many new scans; `Retry-After` gives the wait in seconds |
 |    500 | `internal-error`    | Unexpected failure (no internal details are returned)       |
@@ -254,9 +346,9 @@ against the limits; concurrent requests for the same domain share one scan; at
 most 4 scans run at once and at most 16 more wait, each for up to 30 seconds,
 after which the API answers 503; and a waiting scan is dropped when its client
 disconnects. Every check reports at most 20 evidence items, so a hostile site
-cannot inflate the report. Behind a reverse proxy, run uvicorn with
-`--proxy-headers --forwarded-allow-ips=<proxy address>` so the limits see the
-real client address.
+cannot inflate the report. The client is the TCP peer, or behind a proxy the
+address in `CLIENT_IP_HEADER`, accepted only with origin authentication (see
+[Deployment](#deployment)).
 
 The scanner resolves names with the host's resolvers unless `DNS_NAMESERVERS`
 lists others. On cloud hosts whose resolver also answers for private zones
@@ -265,9 +357,16 @@ resolvers: otherwise the API's answers reveal which internal names exist, and
 the email checks would show their TXT records.
 
 The API keeps no database or scan history. It writes one JSON log line per
-scan request (domain, outcome, cache use, score, grade, coverage and
-duration), never logs client IP addresses or request bodies, and switches off
-uvicorn's access log, which would record client addresses.
+scan request (domain, outcome, cache use, score, grade, coverage, time spent
+waiting and scanning, and whether the client address came from the proxy's
+header or the TCP peer), a `startup` line with its settings (without
+secrets), and tracebacks of unexpected errors. For an invalid body it logs
+only the number and types of validation errors. It never logs client IP
+addresses or request bodies, and switches off uvicorn's access log, which
+would record client addresses. The image also turns off uvicorn's WebSocket
+support, which would log the client address and path of every WebSocket
+handshake. In production the logs are kept for 14 days (see
+[Deployment](#deployment)).
 
 ## Roadmap
 
