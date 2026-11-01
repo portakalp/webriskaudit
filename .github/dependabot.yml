@@ -26,3 +26,9 @@ updates:
     directories: ["/backend", "/frontend"]
     schedule:
       interval: weekly
+
+  # Provider versions in infra/gcp (versions.tf and .terraform.lock.hcl).
+  - package-ecosystem: terraform
+    directory: /infra/gcp
+    schedule:
+      interval: weekly
