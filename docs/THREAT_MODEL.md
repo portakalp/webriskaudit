@@ -21,11 +21,13 @@ about the network layer.
      |  static files                         POST /api/v1/scan {"domain": "..."}
      v                                          |
   Static host + Cloudflare (frontend/out)       v
-                                             Reverse proxy (hosting platform)
+                                             Cloudflare and the platform's proxy
+                                               (set X-Origin-Auth, CF-Connecting-IP)
                                                 |
                                                 v
                                              uvicorn + FastAPI (api.py)
-                                               body limit, rate limits, cache, scan queue
+                                               origin auth, client address, body limit,
+                                               rate limits, cache, scan queue
                                                 |
                                                 v
                                              Scanner (scanner.py) -> 16 checks
@@ -179,7 +181,9 @@ Its settings are limits, allowed origins and the DNS resolvers to query.
 2. **Rate limits on new scans only.** Cache hits and requests that join a
    running scan do not count. A refused request is not recorded, so retrying
    early does not extend the wait. `429` and `503` responses carry
-   `Retry-After`. Expired client entries are swept once per window.
+   `Retry-After`. Expired client entries and cached reports are swept at
+   the start of every request, health checks included (`Sweeper` in
+   `api.py`).
 3. **Bounded queue.** At most 4 scans run; at most 16 more wait for a slot,
    each for up to 30 seconds. Beyond that, or when the wait runs out, the API
    answers `503 scanner-busy` with `Retry-After`.
@@ -232,7 +236,10 @@ Its settings are limits, allowed origins and the DNS resolvers to query.
    hyphens and dots only. The raw input of an invalid request, request
    bodies and client addresses are never logged.
 3. **uvicorn's access log is switched off** at startup, because it would
-   record client addresses.
+   record client addresses. The image also runs uvicorn with `--ws none`:
+   its WebSocket support logs the client address and raw path of every
+   handshake, outside the access log. An upgrade request is then plain HTTP
+   and goes through origin authentication like any other.
 4. Exceptions inside checks and unexpected errors are logged with their
    tracebacks, on the server only.
 
@@ -333,15 +340,20 @@ There is no database, no account, no cookie and no analytics. See
    other non-public ranges (IPv4 and IPv6) at the network level, as a second
    layer behind the code.
 2. **A public recursive resolver** without internal zones: set
-   `DNS_NAMESERVERS` (for example `1.1.1.1,9.9.9.9`), or make sure the
+   `DNS_NAMESERVERS` (for example `1.1.1.1,9.9.9.10`; Quad9's `9.9.9.9`
+   filters domains, which then look nonexistent), or make sure the
    container's `/etc/resolv.conf` points to such a resolver.
-3. **Proxy headers.** Run
-   `uvicorn webriskaudit.api:app --proxy-headers --forwarded-allow-ips=<proxy address>`
-   (the Docker image does, with the proxy addresses from
-   `FORWARDED_ALLOW_IPS`) and make the app reachable only through that proxy.
-   Without `--proxy-headers` every client shares the proxy's address and one
-   rate limit; with `--forwarded-allow-ips="*"` on a directly reachable app,
-   clients can forge `X-Forwarded-For` and bypass the limit.
+3. **Origin authentication and the client address.** Behind a proxy, set
+   `ORIGIN_AUTH_SECRETS` and `CLIENT_IP_HEADER` (`CF-Connecting-IP` behind
+   Cloudflare), and have the proxy set `X-Origin-Auth` to one of the secrets
+   on every request ([ADR 0006](adr/0006-client-ip-behind-cloudflare.md)).
+   Every route except `GET /` and `GET /health` then answers 403 without the
+   secret, so a request that skips the proxy cannot choose its own client
+   address. Without this, every client shares the proxy's address and one
+   rate limit. uvicorn's `--proxy-headers` is no substitute: the proxies
+   append to a client-supplied `X-Forwarded-For`, so with
+   `--forwarded-allow-ips="*"` each request can pick its own rate limit key.
+   The image runs uvicorn with `--no-proxy-headers`.
 4. **One process.** Run one worker per instance and one instance, or accept
    that every limit multiplies with the number of processes. Deploys and
    restarts reset the limits and the cache.
