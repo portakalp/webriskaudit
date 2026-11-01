@@ -73,14 +73,14 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: "/kaleicon.png?v=2",
+        url: "/icon.png",
         type: "image/png",
         sizes: "512x512",
       },
     ],
     apple: [
       {
-        url: "/kaleicon.png?v=2",
+        url: "/icon.png",
       },
     ],
   },

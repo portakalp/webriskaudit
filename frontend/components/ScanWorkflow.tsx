@@ -5,7 +5,6 @@ import { ScanForm } from "./ScanForm"
 import { InteractiveScanDashboard } from "./InteractiveScanDashboard"
 import { MiniReport } from "./MiniReport"
 import { AlertCircle, X } from "lucide-react"
-import { checkRateLimit, getResetTime } from "@/lib/rateLimiter"
 import type { ScanResult } from "@/lib/types"
 
 export type WorkflowStep = "form" | "scanning" | "report"
@@ -32,16 +31,6 @@ export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowS
   }, [animationComplete, apiComplete, scanResults])
 
   const handleFormSubmit = async (domain: string) => {
-    // Check rate limit (3 requests per minute per domain)
-    if (!checkRateLimit(domain, 3, 60000)) {
-      const resetTime = getResetTime(domain)
-      const secondsRemaining = Math.ceil(resetTime / 1000)
-      setError(
-        `Too many requests. Please wait ${secondsRemaining} seconds before trying again.`
-      )
-      return
-    }
-
     // Clear any previous errors
     setError(null)
 
