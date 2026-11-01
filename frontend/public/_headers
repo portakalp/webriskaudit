@@ -1,5 +1,7 @@
-# Response headers for Cloudflare Pages:
-# https://developers.cloudflare.com/pages/configuration/headers/
+# Response headers for the site on Cloudflare Workers static assets
+# (wrangler.jsonc), which read this file from the assets directory
+# (out/_headers after pnpm build) and do not serve it:
+# https://developers.cloudflare.com/workers/static-assets/headers/
 # nginx.conf sends the same security headers in the Docker image; keep the
 # two files in sync.
 #
@@ -7,9 +9,10 @@
 # its bootstrap scripts and static hosting cannot add a per-request nonce.
 # A hash-based policy is future work.
 #
-# connect-src must allow the origin of NEXT_PUBLIC_API_URL in the Pages build
-# settings (https://api.webriskaudit.com); change the two together, or the
-# browser blocks every scan.
+# connect-src must allow NEXT_PUBLIC_API_URL, the repository variable the
+# deploy workflow builds with (https://api.webriskaudit.com); change the two
+# together, or the browser blocks every scan. The deploy job refuses a build
+# where they differ.
 /*
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   X-Content-Type-Options: nosniff
