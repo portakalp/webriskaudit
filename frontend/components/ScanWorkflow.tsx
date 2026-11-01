@@ -5,12 +5,10 @@ import { ScanForm } from "./ScanForm"
 import { InteractiveScanDashboard } from "./InteractiveScanDashboard"
 import { MiniReport } from "./MiniReport"
 import { AlertCircle, FileText, RotateCcw } from "lucide-react"
-import { ScanError, loadSampleReport, scanDomain } from "@/lib/api"
+import { GENERIC_ERROR, ScanError, loadSampleReport, scanDomain } from "@/lib/api"
 import type { ScanResult } from "@/lib/types"
 
 export type WorkflowStep = "form" | "scanning" | "report" | "error"
-
-const GENERIC_ERROR = "Something went wrong. Please try again later."
 
 export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowStep) => void }) {
   const [step, setStep] = useState<WorkflowStep>("form")
@@ -81,7 +79,7 @@ export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowS
       setIsSample(true)
       setStep("report")
     } catch (err) {
-      setError(err instanceof ScanError ? err.message : "The sample report could not be loaded.")
+      setError(err instanceof ScanError ? err.message : GENERIC_ERROR)
       setStep("error")
     }
   }

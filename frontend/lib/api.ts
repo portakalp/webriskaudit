@@ -9,7 +9,7 @@ const API_URL = (
 
 const SCAN_TIMEOUT_MS = 60_000
 
-const GENERIC_ERROR = "Something went wrong while scanning. Please try again later."
+export const GENERIC_ERROR = "Something went wrong while scanning. Please try again later."
 
 // An error whose message is safe to show to the user
 export class ScanError extends Error {
@@ -76,11 +76,15 @@ export async function scanDomain(domain: string, signal?: AbortSignal): Promise<
   }
 }
 
+/** Loads public/sample-report.json. Rejects with a ScanError on any failure. */
 export async function loadSampleReport(): Promise<ScanResult> {
-  const response = await fetch("/sample-report.json")
-  if (!response.ok) {
-    throw new ScanError("The sample report could not be loaded.")
+  try {
+    const response = await fetch("/sample-report.json")
+    if (response.ok) {
+      return (await response.json()) as ScanResult
+    }
+  } catch {
+    // Network or parse failure, reported below
   }
-
-  return (await response.json()) as ScanResult
+  throw new ScanError("The sample report could not be loaded.")
 }
