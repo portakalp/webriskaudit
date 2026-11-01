@@ -290,8 +290,10 @@ jobs:
           gcloud run services update-traffic "$SERVICE" --region "$REGION" --project "$PROJECT_ID" \
             --to-revisions="${PREVIOUS}=100"
           # The rolled-back revision's instance may need a few minutes to start.
+          # Any 2xx will do: on the first deploy that revision is Terraform's
+          # placeholder, which answers every path with an HTML page.
           deadline=$((SECONDS + 240))
-          until curl -fsS --max-time 10 "$API_URL/health" | jq -e '.status == "ok"' > /dev/null; do
+          until curl -fsS -o /dev/null --max-time 10 "$API_URL/health"; do
             if ((SECONDS >= deadline)); then
               echo "::error::Traffic is back on ${PREVIOUS}, but ${API_URL}/health still fails."
               exit 1
