@@ -1,13 +1,28 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
+import { openGraphDefaults, twitterDefaults } from "@/lib/metadata"
+
+const title = "Privacy | WebRiskAudit"
+const description =
+  "How WebRiskAudit handles data: no accounts, no cookies, no analytics and no database of scans. Scanned domains appear in the API's logs."
 
 export const metadata: Metadata = {
   title: "Privacy",
-  description:
-    "How WebRiskAudit handles data: no accounts, no cookies, no analytics and no database of scans. Scanned domains appear in the API's logs.",
+  description,
   alternates: {
     canonical: "/privacy-policy",
+  },
+  openGraph: {
+    ...openGraphDefaults,
+    title,
+    description,
+    url: "/privacy-policy",
+  },
+  twitter: {
+    ...twitterDefaults,
+    title,
+    description,
   },
 }
 
