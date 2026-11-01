@@ -1,0 +1,12 @@
+# Installed and built in the image, never copied from the host.
+node_modules
+.next
+out
+*.tsbuildinfo
+next-env.d.ts
+
+# Local settings must not leak into the build; NEXT_PUBLIC_API_URL is a build arg.
+.env*
+
+Dockerfile
+.dockerignore
