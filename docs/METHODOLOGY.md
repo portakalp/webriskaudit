@@ -2,7 +2,7 @@
 
 This document describes what WebRiskAudit checks, how each check reaches its
 verdict and how the verdicts become a score. It describes methodology version
-`2026-11` (scanner version `2.0.0.dev0`). The rules below are taken from the
+`2026-11` (scanner version `2.0.0`). The rules below are taken from the
 code in `backend/src/webriskaudit/`; where this document and the code
 disagree, the code is right and this document has a bug.
 
@@ -747,7 +747,7 @@ Every report carries two versions, both defined in
   checks, their weights or the grade bands change, so that two reports with
   the same methodology version are comparable. A change to a verdict rule changes what a check reports, so
   it is a change to the checks.
-- `scanner_version` (the package version, currently `2.0.0.dev0`). It changes
+- `scanner_version` (the package version, currently `2.0.0`). It changes
   with any release, including changes that do not affect results.
 
 Scores from different methodology versions should not be compared directly.
