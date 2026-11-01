@@ -6,13 +6,16 @@ the same network tag and service account as the API. Expected:
 - allowed: DNS over UDP and TCP to 1.1.1.1 and 9.9.9.10; TCP 80 and 443 to
   webriskaudit.com;
 - blocked: DNS to a resolver that is not on the allow-list (8.8.8.8), another
-  port on webriskaudit.com (8443, where Cloudflare listens), private ranges;
+  port on webriskaudit.com (8443, where Cloudflare listens), any IPv6
+  connection (the subnet is IPv4-only and the firewall rules cover IPv4
+  only), private ranges;
 - the metadata server must not answer a request without Metadata-Flavor.
 
-It contacts only webriskaudit.com, the two allowed resolvers, 8.8.8.8 and
-private or link-local addresses. It uses the standard library only and does
-not use the system resolver. Prints one JSON line per check and a summary;
-exits 1 if any result differs from the expectation.
+It contacts only webriskaudit.com, the two allowed resolvers (1.1.1.1 also
+over IPv6), 8.8.8.8 and private or link-local addresses. It uses the
+standard library only and does not use the system resolver. Prints one JSON
+line per check and a summary; exits 1 if any result differs from the
+expectation.
 """
 
 import errno
@@ -32,6 +35,7 @@ ALLOWED_RESOLVERS = ("1.1.1.1", "9.9.9.10")
 BLOCKED_RESOLVER = "8.8.8.8"
 BLOCKED_PORT = 8443
 PRIVATE_TARGETS = ("10.0.0.1", "172.16.0.1", "192.168.0.1")
+IPV6_TARGET = "2606:4700:4700::1111"  # 1.1.1.1's IPv6 address; it listens on 443
 METADATA = "169.254.169.254"
 TIMEOUT = 3.0
 USER_AGENT = "webriskaudit-egress-check"
@@ -47,6 +51,7 @@ class BlockedError(Exception):
 
 
 UNREACHABLE = {errno.EHOSTUNREACH, errno.ENETUNREACH}
+NO_IPV6 = {errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT}
 
 
 def connect(address: str, port: int) -> socket.socket:
@@ -176,6 +181,16 @@ def tcp_connect(address: str, port: int) -> str:
         return "connected"
 
 
+def ipv6_probe() -> str:
+    """TCP 443 over IPv6; no IPv6 address or no IPv6 support counts as blocked."""
+    try:
+        return tcp_connect(IPV6_TARGET, 443)
+    except OSError as exc:
+        if exc.errno in NO_IPV6:
+            raise BlockedError(os.strerror(exc.errno)) from exc
+        raise
+
+
 def http_status(address: str, port: int, host: str, path: str, *, tls: bool) -> int:
     """Status code of a GET to address:port with the given Host header."""
     request = (
@@ -234,6 +249,8 @@ def checks(site_address: str | None) -> list[Result]:
         results.append(
             run("tcp", target, "blocked", partial(tcp_connect, site_address, BLOCKED_PORT))
         )
+
+    results.append(run("ipv6", f"[{IPV6_TARGET}]:443", "blocked", ipv6_probe))
 
     for address in PRIVATE_TARGETS:
         results.append(run("tcp", f"{address}:80", "blocked", partial(tcp_connect, address, 80)))

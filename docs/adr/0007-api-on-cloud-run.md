@@ -46,9 +46,10 @@ repository:
   on the instance's network tag denies private and special-purpose IPv4
   ranges, allows TCP 80 and 443 to anywhere and port 53 only to the
   configured resolvers (`1.1.1.1`, `9.9.9.10`), and denies everything else.
-  The subnet has no IPv6, so there is no IPv6 egress at all. **Cloud NAT**
-  with one reserved address gives the scanner a fixed source IP that can be
-  published.
+  The subnet is IPv4-only, so the API should have no IPv6 egress at all;
+  Google does not document this case, so the egress check job tests it
+  (unverified until the first deploy). **Cloud NAT** with one reserved
+  address gives the scanner a fixed source IP that can be published.
 - **Identities**: the runtime service account has no project roles, only
   access to the origin secret. The deploy workflow authenticates with
   **Workload Identity Federation** (no service account keys), limited to
