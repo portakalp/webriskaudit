@@ -126,7 +126,9 @@ new scan may first wait up to 30 seconds for a free slot.
 ```
 backend/      FastAPI service and the scanner package (src/webriskaudit)
 frontend/     Next.js static site served at webriskaudit.com
-docs/         Methodology, threat model and architecture decisions (docs/adr/)
+docs/         Methodology, threat model, deployment runbook, decisions (docs/adr/)
+infra/gcp/    Terraform for the API's Google Cloud project (docs/DEPLOYMENT.md)
+deploy/       Cloud Run service spec and the egress firewall check
 compose.yaml  Local Docker stack: the site and the API
 Makefile      Common tasks; run "make" to list them
 ```
