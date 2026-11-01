@@ -10,6 +10,7 @@ dependencies = [
     "dnspython>=2.9",
     "fastapi>=0.160",
     "httpx>=0.28.1",
+    "idna>=3.20",
     "pydantic>=2.14",
     "uvicorn[standard]>=0.54",
 ]
@@ -21,6 +22,7 @@ dev = [
     "pytest-asyncio>=1.4",
     "pytest-socket>=0.8",
     "ruff>=0.17",
+    "trustme>=1.2.1",
 ]
 
 [build-system]
@@ -44,12 +46,13 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "S", "ASYNC", "RUF", "PT", "N"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-# Tests never touch the network: fakes stand in for DNS, HTTP and TLS.
+# Tests never leave the machine: fakes stand in for DNS, HTTP and TLS, and sockets
+# are disabled except loopback (127.0.0.1) for tests/test_tls_loopback.py.
 addopts = "--disable-socket --allow-unix-socket"
 testpaths = ["tests"]

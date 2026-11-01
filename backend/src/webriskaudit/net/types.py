@@ -51,7 +51,8 @@ class Resolver(Protocol):
 class FetchErrorReason(StrEnum):
     BLOCKED = "blocked"  # target or redirect points at a non-public address, port or scheme
     TIMEOUT = "timeout"
-    CONNECT = "connect"  # refused, unreachable, reset
+    CONNECT = "connect"  # connection refused: nothing listens on the port
+    NETWORK = "network"  # unreachable, or reset or aborted after connecting
     TLS = "tls"  # certificate verification or handshake failed
     TOO_MANY_REDIRECTS = "too_many_redirects"
     DNS = "dns"  # a redirect target did not resolve
@@ -59,9 +60,11 @@ class FetchErrorReason(StrEnum):
 
 
 class FetchError(Exception):
-    def __init__(self, reason: FetchErrorReason, message: str) -> None:
+    def __init__(self, reason: FetchErrorReason, message: str, *, url: str | None = None) -> None:
         super().__init__(message)
         self.reason = reason
+        self.url = url
+        """The URL whose request failed, when known; after redirects, a later hop."""
 
 
 @dataclass(frozen=True)
@@ -72,10 +75,13 @@ class HttpResponse:
     headers: tuple[tuple[str, str], ...]
     """Raw header pairs, lower-cased names, in received order (keeps repeated Set-Cookie)."""
     body: bytes
-    """Body, cut off at the fetcher's size cap."""
+    """Decoded body as far as it was read; see ``truncated``."""
     truncated: bool = False
+    """True if the body was cut off: size cap, time budget, or a broken or undecodable stream."""
     redirects: tuple[str, ...] = ()
     """URLs that answered with a redirect before ``url``, in order."""
+    history: tuple["HttpResponse", ...] = ()
+    """The redirect responses themselves (headers, no body), parallel to ``redirects``."""
 
     def header(self, name: str) -> str | None:
         """First value of a header, or None."""
