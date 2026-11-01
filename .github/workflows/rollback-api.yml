@@ -1,0 +1,74 @@
+name: Roll back API
+
+# Sends all of the API's traffic to an earlier Cloud Run revision:
+#   gcloud run revisions list --service webriskaudit-api --region europe-west1
+#   gh workflow run rollback-api.yml --ref main -f revision=webriskaudit-api-00042-abc
+# The next deploy (traffic: latestRevision) moves traffic to the new revision
+# again. Workload Identity Federation accepts this file's dispatch runs on
+# main only (infra/gcp/wif.tf).
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Cloud Run revision of webriskaudit-api to send all traffic to
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Roll back API
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://api.webriskaudit.com/
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation
+    # Shared with the deploy-api job in ci.yml: one deploy or rollback runs at a
+    # time, and GitHub keeps only one waiting; a newer one replaces it.
+    concurrency:
+      group: deploy-api-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash # with -o pipefail
+    env:
+      REGION: europe-west1
+      SERVICE: webriskaudit-api
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      API_URL: https://api.webriskaudit.com
+      REVISION: ${{ inputs.revision }}
+    steps:
+      - name: Check the revision name
+        run: |
+          if [[ ! $REVISION =~ ^webriskaudit-api-[a-z0-9-]{1,50}$ ]]; then
+            echo "::error::'$REVISION' is not a revision of webriskaudit-api."
+            exit 1
+          fi
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Send all traffic to the revision
+        run: |
+          gcloud run services update-traffic "$SERVICE" --region "$REGION" --project "$PROJECT_ID" \
+            --to-revisions="${REVISION}=100"
+      # The revision's instance may need a few minutes to start.
+      - name: Check /health
+        run: |
+          for _ in $(seq 30); do
+            if curl -fsS --max-time 10 "$API_URL/health" | jq -e '.status == "ok"' > /dev/null; then
+              echo "### API rolled back to \`${REVISION}\`" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::${API_URL}/health still fails after 5 minutes."
+          exit 1

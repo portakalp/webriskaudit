@@ -1,6 +1,6 @@
 [project]
 name = "webriskaudit"
-version = "2.0.0.dev0"
+version = "2.0.0"
 description = "Passive security posture scanner for domains"
 requires-python = ">=3.12"
 license = "MIT"
