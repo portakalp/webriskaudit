@@ -559,7 +559,13 @@ gh workflow run rollback-api.yml --ref main -f revision=REVISION
 ```
 
 It shares a concurrency group with the deploy job, so a rollback waits for
-a running deploy and the other way round.
+a running deploy and the other way round. The group never cancels a
+running deploy or rollback, but GitHub keeps only one waiting in it: when
+another is queued, the waiting one is cancelled. If that drops a deploy
+(`deploy-api` shows as cancelled and `deploy-site` is skipped), run
+`gh workflow run ci.yml --ref main` again; if it drops a rollback, start
+the rollback again.
+
 The next deploy sets traffic back to the latest revision. Artifact Registry
 keeps the 10 most recent images (and anything younger than 30 days), so
 older revisions may no longer be able to start.

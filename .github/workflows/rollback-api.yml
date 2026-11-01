@@ -30,7 +30,8 @@ jobs:
     permissions:
       contents: read
       id-token: write # Workload Identity Federation
-    # Shared with the deploy-api job in ci.yml: one deploy or rollback at a time.
+    # Shared with the deploy-api job in ci.yml: one deploy or rollback runs at a
+    # time, and GitHub keeps only one waiting; a newer one replaces it.
     concurrency:
       group: deploy-api-production
       cancel-in-progress: false

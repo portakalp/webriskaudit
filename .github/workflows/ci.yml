@@ -174,7 +174,8 @@ jobs:
     permissions:
       contents: read
       id-token: write # Workload Identity Federation
-    # Shared with rollback-api.yml: one deploy or rollback at a time, none cancelled.
+    # Shared with rollback-api.yml: one deploy or rollback runs at a time and is
+    # never cancelled, but GitHub keeps only one waiting; a newer one replaces it.
     concurrency:
       group: deploy-api-production
       cancel-in-progress: false
