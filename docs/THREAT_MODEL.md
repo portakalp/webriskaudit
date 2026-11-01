@@ -311,8 +311,9 @@ OIDC token only for push and manual runs of the deploy and rollback
 workflows on `main` of this repository (`infra/gcp/wif.tf`), for a service
 account that can replace only the API service, push only to its image
 repository and deploy only as the runtime account. The image is deployed by
-digest. The site deploy uses a Cloudflare token limited to editing Workers
-scripts.
+digest. The site deploy uses a Cloudflare token with the permission Workers
+Scripts: Edit only. *Unverified:* whether `wrangler deploy` needs more
+(DEPLOYMENT.md, step 6l).
 
 ## Data kept
 
