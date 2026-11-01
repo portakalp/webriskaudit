@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from SecurityAuditor import SecurityAuditor
+from SecurityAuditor import SecurityAuditor, CATEGORY_MAX
 import json
 import logging
 from typing import List, Dict, Optional, Any
@@ -60,8 +60,6 @@ class ScanResponse(BaseModel):
 
     # Compliance
     compliance_risk: bool
-    cookie_consent_detected: bool
-    data_leak_safe: bool
 
     # Category scores
     email_security: CategoryScoreDetail
@@ -82,9 +80,22 @@ def calculate_risk_level(score: int) -> str:
 
 def get_default_categories():
     return {
-        "email_security": {"score": 0, "max": 35, "percentage": 0.0, "risk_level": "CRITICAL", "tests": []},
-        "server_security": {"score": 0, "max": 50, "percentage": 0.0, "risk_level": "CRITICAL", "tests": []},
-        "compliance": {"score": 0, "max": 15, "percentage": 0.0, "risk_level": "CRITICAL", "tests": []}
+        "email_security": {"score": 0, "max": CATEGORY_MAX["email"], "percentage": 0.0, "risk_level": "CRITICAL", "tests": []},
+        "server_security": {"score": 0, "max": CATEGORY_MAX["server"], "percentage": 0.0, "risk_level": "CRITICAL", "tests": []},
+        "compliance": {"score": 0, "max": CATEGORY_MAX["compliance"], "percentage": 0.0, "risk_level": "CRITICAL", "tests": []}
+    }
+
+def map_category(category: dict) -> dict:
+    """Maps one SecurityAuditor category to CategoryScoreDetail format."""
+    score = category.get("score", 0)
+    max_score = category.get("max", 0)
+    percentage = (score / max_score * 100) if max_score > 0 else 0
+    return {
+        "score": score,
+        "max": max_score,
+        "percentage": round(percentage, 1),
+        "risk_level": category.get("status", "CRITICAL"),
+        "tests": []
     }
 
 def map_audit_results(domain: str, raw_report: dict) -> dict:
@@ -94,10 +105,10 @@ def map_audit_results(domain: str, raw_report: dict) -> dict:
     Input structure (new):
     {
         "domain": str,
-        "score": int,
-        "email_security": {"score": int, "status": str, "details": {...}},
-        "server_security": {"score": int, "status": str, "details": {...}},
-        "compliance": {"score": int, "status": str, "details": {...}}
+        "score": int,  # normalized to 0-100
+        "email_security": {"score": int, "max": int, "status": str, "details": {...}},
+        "server_security": {"score": int, "max": int, "status": str, "details": {...}},
+        "compliance": {"score": int, "max": int, "status": str, "details": {...}}
     }
     """
     # Extract category data
@@ -122,12 +133,6 @@ def map_audit_results(domain: str, raw_report: dict) -> dict:
     # Compliance details
     comp_details = compliance.get("details", {})
     privacy_found = comp_details.get("privacy_policy", {}).get("found", False)
-    cookie_consent = comp_details.get("cookie_consent", {}).get("assumed", False)
-
-    # Calculate category percentages
-    email_percentage = (email_sec.get("score", 0) / 35 * 100) if 35 > 0 else 0
-    server_percentage = (server_sec.get("score", 0) / 50 * 100) if 50 > 0 else 0
-    compliance_percentage = (compliance.get("score", 0) / 15 * 100) if 15 > 0 else 0
 
     return {
         "score": raw_report.get("score", 0),
@@ -147,32 +152,12 @@ def map_audit_results(domain: str, raw_report: dict) -> dict:
 
         # Compliance (note: compliance_risk True=Risk, False=Safe)
         "compliance_risk": not privacy_found,  # Inverted: risk = NOT found
-        "cookie_consent_detected": cookie_consent,
-        "data_leak_safe": True,  # Always true in new version
 
         # Categories
         "categories": {
-            "email_security": {
-                "score": email_sec.get("score", 0),
-                "max": 35,
-                "percentage": round(email_percentage, 1),
-                "risk_level": email_sec.get("status", "CRITICAL"),
-                "tests": []
-            },
-            "server_security": {
-                "score": server_sec.get("score", 0),
-                "max": 50,
-                "percentage": round(server_percentage, 1),
-                "risk_level": server_sec.get("status", "CRITICAL"),
-                "tests": []
-            },
-            "compliance": {
-                "score": compliance.get("score", 0),
-                "max": 15,
-                "percentage": round(compliance_percentage, 1),
-                "risk_level": compliance.get("status", "CRITICAL"),
-                "tests": []
-            }
+            "email_security": map_category(email_sec),
+            "server_security": map_category(server_sec),
+            "compliance": map_category(compliance)
         }
     }
 
@@ -192,8 +177,6 @@ def get_fallback_response(domain: str, error_msg: str) -> ScanResponse:
         server_leak=False,
         security_headers_score=0,
         compliance_risk=True,
-        cookie_consent_detected=False,
-        data_leak_safe=False,
         email_security=defaults["email_security"],
         server_security=defaults["server_security"],
         compliance=defaults["compliance"]
@@ -242,8 +225,6 @@ def scan_domain(request: ScanRequest):
         security_headers_score=mapped_results["security_headers_score"],
         
         compliance_risk=mapped_results["compliance_risk"],
-        cookie_consent_detected=mapped_results["cookie_consent_detected"],
-        data_leak_safe=mapped_results["data_leak_safe"],
         
         email_security=mapped_results["categories"]["email_security"],
         server_security=mapped_results["categories"]["server_security"],

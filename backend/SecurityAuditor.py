@@ -56,14 +56,19 @@ SCORING = {
         "ssl": 10,
         "waf": 10,
         "server_identity": 10,
-        "headers_max": 20,
-        "headers_per": 5
+        "security_headers": 20
     },
     "compliance": {
-        "privacy_policy": 10,
-        "cookie_consent": 5
+        "privacy_policy": 10
     }
 }
+
+# Partial credit per security header when fewer than 4 are present
+POINTS_PER_HEADER = 5
+
+# Each SCORING value is the most a check can award, so maxima are plain sums
+CATEGORY_MAX = {category: sum(checks.values()) for category, checks in SCORING.items()}
+MAX_SCORE = sum(CATEGORY_MAX.values())
 
 # Privacy Policy Paths (Multi-Language Support for Europe)
 PRIVACY_PATHS = [
@@ -653,7 +658,7 @@ class SecurityAuditor:
             # LAW #3: Benefit of doubt on timeout
             return {
                 "count": 5,
-                "points": SCORING["server"]["headers_max"],
+                "points": SCORING["server"]["security_headers"],
                 "headers": {h: True for h in REQUIRED_HEADERS},
                 "error": "timeout",
                 "assumed": True
@@ -677,9 +682,9 @@ class SecurityAuditor:
 
         # LAW #2: Strict scoring math
         if count >= 4:
-            points = SCORING["server"]["headers_max"]
+            points = SCORING["server"]["security_headers"]
         else:
-            points = count * SCORING["server"]["headers_per"]
+            points = count * POINTS_PER_HEADER
 
         return {
             "count": count,
@@ -776,22 +781,6 @@ class SecurityAuditor:
             "reason": "not_found"
         }
 
-    def _check_cookie_consent(self, privacy_policy_found: bool) -> dict:
-        """
-        Assume cookie consent if privacy policy exists.
-        LAW #2: 5 points if privacy policy found, 0 otherwise
-        """
-        if privacy_policy_found:
-            return {
-                "assumed": True,
-                "points": SCORING["compliance"]["cookie_consent"]
-            }
-        else:
-            return {
-                "assumed": False,
-                "points": 0
-            }
-
     # ========================================================================
     # MAIN ORCHESTRATOR
     # ========================================================================
@@ -816,10 +805,8 @@ class SecurityAuditor:
             "security_headers": self._check_security_headers()
         }
 
-        privacy_policy_result = self._check_privacy_policy()
         compliance_details = {
-            "privacy_policy": privacy_policy_result,
-            "cookie_consent": self._check_cookie_consent(privacy_policy_result["found"])
+            "privacy_policy": self._check_privacy_policy()
         }
 
         # Calculate category scores (LAW #2: Strict math)
@@ -828,26 +815,32 @@ class SecurityAuditor:
         compliance_score = sum(d["points"] for d in compliance_details.values())
 
         # Calculate category status
-        email_status = self._calculate_status(email_score, 35)
-        server_status = self._calculate_status(server_score, 50)
-        compliance_status = self._calculate_status(compliance_score, 15)
+        email_status = self._calculate_status(email_score, CATEGORY_MAX["email"])
+        server_status = self._calculate_status(server_score, CATEGORY_MAX["server"])
+        compliance_status = self._calculate_status(compliance_score, CATEGORY_MAX["compliance"])
+
+        # Overall score is normalized to 0-100
+        earned = email_score + server_score + compliance_score
 
         # Return simplified structure
         return {
             "domain": self.domain,
-            "score": email_score + server_score + compliance_score,
+            "score": round(100 * earned / MAX_SCORE),
             "email_security": {
                 "score": email_score,
+                "max": CATEGORY_MAX["email"],
                 "status": email_status,
                 "details": email_details
             },
             "server_security": {
                 "score": server_score,
+                "max": CATEGORY_MAX["server"],
                 "status": server_status,
                 "details": server_details
             },
             "compliance": {
                 "score": compliance_score,
+                "max": CATEGORY_MAX["compliance"],
                 "status": compliance_status,
                 "details": compliance_details
             }
