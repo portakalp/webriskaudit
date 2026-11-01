@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react"
 export const metadata: Metadata = {
   title: "Privacy",
   description:
-    "How WebRiskAudit handles data: no accounts, no cookies, no analytics. Scanned domains are checked and not stored.",
+    "How WebRiskAudit handles data: no accounts, no cookies, no analytics and no database of scans. Scanned domains appear in the API's logs.",
   alternates: {
     canonical: "/privacy-policy",
   },
@@ -49,23 +49,36 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">When you run a scan</h2>
             <p className="text-slate-700 leading-relaxed mb-4">
               The domain you enter is sent from your browser to the WebRiskAudit API. The API performs
-              passive checks against that domain (DNS lookups, one TLS handshake and a few ordinary HTTP GET
-              requests) and returns the result to your browser without storing it. The checks are made from
-              the API server, so the scanned site sees the server&apos;s address, not yours.
+              passive checks against that domain (DNS lookups, a TLS certificate check and HTTP requests for
+              the home page and for up to about 50 common privacy-policy paths) and returns the result to your
+              browser. The checks are made from the API server, so the scanned site sees the server&apos;s
+              address, not yours.
+            </p>
+            <p className="text-slate-700 leading-relaxed mb-4">
+              The API keeps no database of scans or results. Its application logs do record each scanned
+              domain and the URLs requested while checking it, and these logs are stored by the API&apos;s
+              hosting provider.
             </p>
 
             <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">Hosting</h2>
             <p className="text-slate-700 leading-relaxed mb-4">
-              The site is served through Cloudflare. As the hosting and CDN provider, Cloudflare processes IP
-              addresses and request metadata (such as the time, requested URL and user agent) in its logs
-              under its own{" "}
+              The site is served through Cloudflare and the API runs on Render. Your browser connects to both
+              directly, so each of them processes your IP address and request metadata (such as the time,
+              requested URL and user agent) and keeps logs under its own privacy policy:{" "}
               <a
                 href="https://www.cloudflare.com/privacypolicy/"
                 className="text-orange-600 hover:text-orange-700 underline transition-colors"
               >
-                privacy policy
+                Cloudflare
               </a>
-              .
+              ,{" "}
+              <a
+                href="https://render.com/privacy"
+                className="text-orange-600 hover:text-orange-700 underline transition-colors"
+              >
+                Render
+              </a>
+              . The API&apos;s application logs described above are stored by Render.
             </p>
 
             <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">Source code</h2>

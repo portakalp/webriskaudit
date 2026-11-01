@@ -53,7 +53,7 @@ export const metadata: Metadata = {
     card: "summary",
     title: "WebRiskAudit | Open-source passive security scanner",
     description:
-      "A passive security posture check for a domain. Automated, heuristic results from DNS lookups, one TLS handshake and a few HTTP requests.",
+      "A passive security posture check for a domain. Automated, heuristic results from DNS lookups, a TLS certificate check and HTTP requests for the home page and common privacy-policy paths.",
     images: ["/icon.png"],
   },
   alternates: {
