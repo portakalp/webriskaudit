@@ -109,7 +109,9 @@ export default function PrivacyPolicyPage() {
               <a href="https://www.cloudflare.com/privacypolicy/" className={LINK}>
                 privacy policy
               </a>
-              .
+              . Requests that Cloudflare blocks, for example because they exceed that limit, can also be
+              recorded with your IP address, the time, the requested URL and your user agent in the
+              site&apos;s Cloudflare security event log, which the operator can see for up to 31 days.
             </p>
             <p className="text-slate-700 leading-relaxed mb-4">
               The API runs on Google Cloud Run in Google&apos;s europe-west1 region (Belgium), behind a Google
