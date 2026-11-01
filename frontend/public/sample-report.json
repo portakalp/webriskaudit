@@ -1,6 +1,5 @@
 {
-  "_placeholder": true,
-  "domain": "webriskaudit.com",
+  "domain": "example.com",
   "score": 84,
   "risk_level": "SECURE",
   "spf_status": true,

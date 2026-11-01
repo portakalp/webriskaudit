@@ -82,8 +82,5 @@ export async function loadSampleReport(): Promise<ScanResult> {
     throw new ScanError("The sample report could not be loaded.")
   }
 
-  // "_placeholder" only tells maintainers the file still holds made-up values
-  const report: ScanResult & { _placeholder?: boolean } = await response.json()
-  delete report._placeholder
-  return report
+  return (await response.json()) as ScanResult
 }
