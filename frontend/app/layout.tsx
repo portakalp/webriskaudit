@@ -1,62 +1,50 @@
 import type React from "react"
 import type { Metadata } from "next"
-import Script from "next/script"
 import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google"
-import { Analytics } from "@vercel/analytics/next"
-import { CookieBanner } from "@/components/cookie-banner"
+import { openGraphDefaults, twitterDefaults } from "@/lib/metadata"
 import "./globals.css"
 
-const _plusJakartaSans = Plus_Jakarta_Sans({ subsets: ["latin"] })
-const _jetbrainsMono = JetBrains_Mono({ subsets: ["latin"] })
+const plusJakartaSans = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-plus-jakarta-sans" })
+const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono" })
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://webriskaudit.com"),
   title: {
-    default: "Web Risk Audit | Digital Asset Security Audits (Cyber Shield, Full Armor, Digital Bodyguard)",
-    template: "%s | Web Risk Audit",
+    default: "WebRiskAudit | Open-source passive security scanner",
+    template: "%s | WebRiskAudit",
   },
   description:
-    "Expert Web Risk Audit services for European SMEs. We provide evidence-based digital asset security audits, severity ratings, and prioritized remediation backlogs. No implementation included.",
+    "WebRiskAudit is an open-source passive security scanner. It checks a domain's email authentication, TLS certificate, HTTP security headers and a few other public signals. Results are automated and heuristic.",
   keywords: [
-    "Web Risk Audit",
-    "Digital Asset Security",
-    "Cyber Shield",
-    "Full Armor",
-    "Digital Bodyguard",
-    "SME Security Audit",
-    "Vulnerability Assessment",
+    "WebRiskAudit",
+    "passive security scanner",
+    "security posture",
+    "open source",
+    "SPF",
+    "DKIM",
+    "DMARC",
+    "TLS certificate",
+    "HTTP security headers",
   ],
-  authors: [{ name: "Web Risk Audit Agency" }],
-  creator: "Web Risk Audit Agency",
-  publisher: "Web Risk Audit Agency",
+  authors: [{ name: "Taha Gökalp Bakar", url: "https://github.com/portakalp" }],
+  creator: "Taha Gökalp Bakar",
   formatDetection: {
     email: false,
     address: false,
     telephone: false,
   },
   openGraph: {
-    title: "Web Risk Audit | Digital Asset Security Audits",
+    ...openGraphDefaults,
+    title: "WebRiskAudit | Open-source passive security scanner",
     description:
-      "Secure your business with expert digital asset security audits. We deliver evidence, severity ratings, and a prioritized remediation backlog for your team to implement.",
+      "A passive security posture check for a domain: email authentication, TLS certificate, HTTP security headers and a few other public signals.",
     url: "https://webriskaudit.com",
-    siteName: "Web Risk Audit Agency",
-    locale: "en_US",
-    type: "website",
-    images: [
-      {
-        url: "/images/hero-vector-v2.png", // Using the hero image as OG image
-        width: 800,
-        height: 700,
-        alt: "Web Risk Audit Security Shield",
-      },
-    ],
   },
   twitter: {
-    card: "summary_large_image",
-    title: "Web Risk Audit | Digital Asset Security Audits",
+    ...twitterDefaults,
+    title: "WebRiskAudit | Open-source passive security scanner",
     description:
-      "Expert digital asset security audits. Evidence, severity ratings, and prioritized remediation backlogs.",
-    images: ["/images/hero-vector-v2.png"],
+      "A passive security posture check for a domain. Automated, heuristic results from DNS lookups, a TLS certificate check and HTTP requests for the home page and common privacy-policy paths.",
   },
   alternates: {
     canonical: "/",
@@ -75,14 +63,14 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: "/kaleicon.png?v=2",
+        url: "/icon.png",
         type: "image/png",
         sizes: "512x512",
       },
     ],
     apple: [
       {
-        url: "/kaleicon.png?v=2",
+        url: "/icon.png",
       },
     ],
   },
@@ -95,52 +83,29 @@ export default function RootLayout({
 }>) {
   const jsonLd = {
     "@context": "https://schema.org",
-    "@type": "ProfessionalService",
-    name: "Web Risk Audit Agency",
-    image: "https://webriskaudit.com/icon.png",
-    description:
-      "Provider of expert digital asset security audits, vulnerability assessments, and prioritized remediation plans for SMEs.",
+    "@type": "WebApplication",
+    name: "WebRiskAudit",
     url: "https://webriskaudit.com",
-    telephone: "", // User didn't provide a phone number in the prompt
-    address: {
-      "@type": "PostalAddress",
-      addressCountry: "PL", // Poland as requested
+    description:
+      "Open-source passive security scanner that checks a domain's email authentication, TLS certificate, HTTP security headers and a few other public signals.",
+    applicationCategory: "SecurityApplication",
+    isAccessibleForFree: true,
+    author: {
+      "@type": "Person",
+      name: "Taha Gökalp Bakar",
+      url: "https://github.com/portakalp",
     },
-    priceRange: "€0 - €3900",
-    serviceType: ["Cybersecurity Audit", "Vulnerability Assessment", "Compliance Audit"],
-    offers: {
-      "@type": "Offer",
-      price: "0",
-      priceCurrency: "EUR",
-      name: "Free Audit & Diagnostics",
-    },
-    sameAs: [],
+    sameAs: "https://github.com/portakalp/webriskaudit",
   }
 
   return (
-    <html lang="en">
-      <head>
-        <Script
-          src="https://www.googletagmanager.com/gtag/js?id=G-HS3PQE5Z4S"
-          strategy="afterInteractive"
-        />
-        <Script id="google-analytics" strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', 'G-HS3PQE5Z4S');
-          `}
-        </Script>
-      </head>
-      <body className={`font-sans antialiased`}>
+    <html lang="en" className={`${plusJakartaSans.variable} ${jetbrainsMono.variable}`}>
+      <body className="font-sans antialiased">
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
         {children}
-        <Analytics />
-        <CookieBanner />
       </body>
     </html>
   )
