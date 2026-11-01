@@ -517,7 +517,23 @@ Stopping the API: `gcloud run services update webriskaudit-api
 Site: Workers & Pages → `webriskaudit-web` → Deployments → roll back to an
 earlier version, or `npx wrangler rollback` in `frontend/`.
 
-Removing the infrastructure: `terraform destroy` removes everything except
+Removing the infrastructure takes two runs, 1 to 2 hours apart. Cloud Run
+releases the subnet's addresses only that long after the service (or the
+egress check job) is deleted, and the subnet cannot be deleted before
+then. Terraform does not know that the service uses the subnet (CI adds
+the VPC settings), so a single `terraform destroy` fails on the subnet.
+
+```bash
+gcloud run jobs delete webriskaudit-egress-check --region europe-west1 --quiet   # only if it still exists
+terraform -chdir=infra/gcp destroy -target=google_cloud_run_v2_service.api
+# wait 1 to 2 hours
+terraform -chdir=infra/gcp destroy
+```
+
+The first run also removes what refers to the service: its IAM bindings
+and the load balancer's serverless NEG, backend, URL map, proxy and
+forwarding rule. If a plain `terraform destroy` already failed on the
+subnet, wait and run it again. Together the runs remove everything except
 the state bucket and the `_Default` sink (left disabled, see above). Some
 names are then blocked for a while: the log bucket stays in
 `DELETE_REQUESTED` for 7 days (`gcloud logging buckets undelete
