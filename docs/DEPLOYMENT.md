@@ -401,8 +401,9 @@ bucket.
    Every line should have `"ok": true` and the summary `"failed": 0`:
    DNS over UDP and TCP to `1.1.1.1` and `9.9.9.10` allowed; to `8.8.8.8`
    blocked; webriskaudit.com on 80 and 443 allowed and on 8443 blocked
-   (Cloudflare listens there, so this proves the final deny rule); the
-   private addresses blocked; the metadata server either blocked or
+   (Cloudflare listens there, so this proves the final deny rule); no IPv6
+   connection (`ipv6`, to `1.1.1.1`'s IPv6 address on 443); the private
+   addresses blocked; the metadata server either blocked or
    refusing a request without `Metadata-Flavor`; the egress address equal
    to `nat_ip`. Record the metadata result in the threat model: if it is
    reachable, a request with the header gets a token for `api-runtime`,
@@ -620,6 +621,12 @@ Check these during the first deploy and update this file:
 - That Terraform reports no drift after CI deploys (checklist step 8).
 - The metadata server's reachability through the egress firewall
   (documented as always allowed for VMs only).
+- That the API has no IPv6 egress. The subnet is IPv4-only and the firewall
+  rules cover IPv4 only; Google does not document what happens to IPv6
+  traffic with all-traffic Direct VPC egress on such a subnet. The egress
+  check's `ipv6` line must say `blocked`. If it connects, IPv6 bypasses the
+  egress firewall (the app still refuses non-public addresses): treat it as
+  a launch blocker and record it in the threat model.
 - That Cloudflare overwrites a client-supplied `CF-Connecting-IP`
   (checklist step 5), and that client disconnects reach the app through
   Cloudflare and the load balancer.
