@@ -24,15 +24,18 @@ maintaining infrastructure for it.
 - The API accepts only a domain: `POST /api/v1/scan` with
   `{"domain": "<string>"}`. There are no accounts, no email field, no
   cookies and no database.
-- Reports are kept only in an in-memory cache for 10 minutes (at most 1024
-  of them), to absorb repeated requests. There is no scan history.
+- Reports are kept only in an in-memory cache (at most 1024 of them), to
+  absorb repeated requests: served for 10 minutes and dropped with the next
+  request after that. There is no scan history.
 - The client's IP address is used only by the in-memory rate limiter, which
   keys an IPv4 address as is and an IPv6 address by its /64 network. The key
   is also held while that client's new scan waits or runs, to allow one at a
-  time. It is never logged or written anywhere, and it is forgotten once its
-  hits are outside the window.
+  time. It is never logged or written anywhere. It is forgotten with the
+  first request of any kind after its last hit leaves the window, or when
+  the process restarts.
 - The application logs one JSON line per scan request with the normalized
-  domain, outcome, cache use, score, grade, coverage and duration. It never
+  domain, outcome, cache use, score, grade, coverage, timings and whether
+  the client address came from a proxy header or the TCP peer. It never
   logs client addresses, request bodies or the raw input of an invalid
   request, and it switches off uvicorn's access log, which would record
   client addresses.
@@ -54,5 +57,7 @@ maintaining infrastructure for it.
 - Some personal data is still processed outside the application's control:
   the hosting platform and Cloudflare see client addresses and keep their own
   logs, and a scanned domain can itself identify a person (a personal
-  domain). The privacy note has to describe these, and log retention is set
-  on the platform.
+  domain). The privacy note has to describe these. Log retention is set in
+  the deployment: in production the platform's request logs, which hold
+  client addresses, are not stored, and application logs are kept for 14
+  days ([ADR 0007](0007-api-on-cloud-run.md)).
