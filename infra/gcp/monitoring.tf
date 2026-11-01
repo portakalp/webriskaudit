@@ -17,8 +17,9 @@ locals {
       display_name = "API /health"
       host         = var.api_hostname
       path         = "/health"
-      json_path    = "$.status"
-      content      = "ok"
+      # The expected value of a JSON string includes its quotes.
+      json_path = "$.status"
+      content   = "\"ok\""
     }
     # Status only: the page content changes at the cutover to the new site.
     site-home = {

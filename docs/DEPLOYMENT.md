@@ -514,7 +514,7 @@ short-lived tokens, and no service account keys exist; do not create any.
 ## Monitoring
 
 Terraform creates uptime checks for `https://api.webriskaudit.com/health`
-(JSON `status` must be `ok`) and `https://webriskaudit.com/` (status only),
+(JSON `status` must be the string `"ok"`) and `https://webriskaudit.com/` (status only),
 every 5 minutes from Europe, Virginia and Asia-Pacific, and an alert policy
 per check that emails `alert_email` when more than one location fails.
 
