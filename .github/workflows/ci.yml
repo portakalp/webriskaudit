@@ -303,3 +303,93 @@ jobs:
             echo "- Revision: \`${revision}\` (before: \`${PREVIOUS:-none}\`; roll back with rollback-api.yml)"
             echo "- Image: \`${IMAGE}@${DIGEST}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Builds the site with NEXT_PUBLIC_API_URL and deploys it to the Worker
+  # webriskaudit-web (frontend/wrangler.jsonc), then checks its pages and
+  # headers. Runs only when the repository variable DEPLOY_SITE is "true",
+  # after deploy-api: also when that was skipped, never when a job before it
+  # failed or was cancelled.
+  deploy-site:
+    name: Deploy site (Cloudflare Workers)
+    needs: [frontend, backend, docker, audit, terraform, secrets, deploy-api]
+    if: >-
+      vars.DEPLOY_SITE == 'true' && !cancelled() &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    permissions:
+      contents: read
+    concurrency:
+      group: deploy-site-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash # with -o pipefail
+        working-directory: frontend
+    env:
+      NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+      NEXT_TELEMETRY_DISABLED: "1"
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the repository variables
+        env:
+          ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          TOKEN_SET: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        run: |
+          status=0
+          if [[ ! $NEXT_PUBLIC_API_URL =~ ^https://[a-z0-9.-]+$ ]]; then
+            echo "::error::Repository variable NEXT_PUBLIC_API_URL must be the API's https origin, such as https://api.webriskaudit.com."
+            status=1
+          fi
+          if [[ ! $ACCOUNT_ID =~ ^[0-9a-f]{32}$ ]]; then
+            echo "::error::Repository variable CLOUDFLARE_ACCOUNT_ID is missing or malformed (docs/DEPLOYMENT.md, setup step 7)."
+            status=1
+          fi
+          if [[ $TOKEN_SET != true ]]; then
+            echo "::error::Secret CLOUDFLARE_API_TOKEN is not set in the production environment (docs/DEPLOYMENT.md, setup step 7)."
+            status=1
+          fi
+          exit "$status"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: frontend/package.json
+      # No dependency cache, so the deployed build comes from the lock file alone.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Check that the build calls the API and its CSP allows it
+        run: |
+          if ! grep -rqF -- "$NEXT_PUBLIC_API_URL" out/_next/static; then
+            echo "::error::The build does not contain ${NEXT_PUBLIC_API_URL}."
+            exit 1
+          fi
+          if ! grep -qF -- "connect-src 'self' ${NEXT_PUBLIC_API_URL};" out/_headers; then
+            echo "::error::connect-src in frontend/public/_headers does not allow ${NEXT_PUBLIC_API_URL}; the browser would block every scan."
+            exit 1
+          fi
+      - id: deploy
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          # Installed with "pnpm add" for this run only. Dependabot does not
+          # update this input; check it by hand (docs/DEPLOYMENT.md).
+          wranglerVersion: 4.151.1
+          packageManager: pnpm
+          workingDirectory: frontend
+          command: deploy
+      - name: Smoke test
+        env:
+          SITE_URL: ${{ steps.deploy.outputs.deployment-url }}
+          API_ORIGIN: ${{ vars.NEXT_PUBLIC_API_URL }}
+        run: ../deploy/checks/site_smoke.sh
