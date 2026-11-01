@@ -17,9 +17,9 @@
 
 ## How it works
 
-- Only passive checks are performed: DNS lookups, one TLS handshake and a few ordinary HTTP GET requests.
-- No port scanning, crawling, fuzzing, authentication or exploitation is attempted.
-- No account is needed. The domain is sent to the WebRiskAudit API, which runs the checks and returns the result without storing it.
+- Only passive checks are performed: DNS lookups, a TLS certificate check and HTTP GET requests for the home page and for up to about 50 common privacy-policy paths (such as /privacy or /datenschutz), stopping at the first one found.
+- Nothing beyond these requests is made: no port scanning, link crawling, fuzzing, authentication or exploitation is attempted.
+- No account is needed. The domain is sent to the WebRiskAudit API, which runs the checks and returns the result. The API keeps no database of scans, but its application logs record each scanned domain.
 
 ## Limitations
 

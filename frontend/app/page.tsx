@@ -71,8 +71,9 @@ export default function Home() {
                 <ScanWorkflow onStepChange={setWorkflowStep} />
 
                 <p className="mt-6 pt-6 border-t border-slate-100 text-xs text-slate-500 text-center text-pretty">
-                  Only passive checks are performed: DNS lookups, one TLS handshake and a few ordinary HTTP GET
-                  requests. Results are automated and heuristic, and are not a substitute for a professional
+                  Only passive checks are performed: DNS lookups, a TLS certificate check and HTTP requests for
+                  the home page and for up to about 50 common privacy-policy paths, stopping at the first one
+                  found. Results are automated and heuristic, and are not a substitute for a professional
                   security assessment.
                 </p>
               </div>
