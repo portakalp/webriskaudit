@@ -1,0 +1,8 @@
+# The image needs only the project metadata, the lockfile and the package
+# source; everything else (virtualenv, caches, tests, .env files) stays out.
+*
+!pyproject.toml
+!uv.lock
+!src/
+**/__pycache__
+**/*.py[cod]

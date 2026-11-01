@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   frontend:
-    name: Frontend (lint, types, build)
+    name: Frontend (lint, types, tests, build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -32,10 +32,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm exec tsc --noEmit
+      - run: pnpm test
+      - name: Check that lib/api-types.ts matches backend/openapi.json
+        # ls-files fails when the file is not committed, which git diff would miss.
+        run: |
+          git ls-files --error-unmatch lib/api-types.ts
+          pnpm gen:api
+          git diff --exit-code -- lib/api-types.ts
       - run: pnpm build
 
   backend:
-    name: Backend (lint, import)
+    name: Backend (lint, types, tests, OpenAPI)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -45,9 +52,45 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: "3.12"
-      - run: uvx ruff check --select F,E9 .
-      - run: uv venv && uv pip install -r requirements.txt
-      - run: uv run --no-project python -c "import main"
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
+      - name: Check that openapi.json matches the code
+        # ls-files fails when the file is not committed, which git diff would miss.
+        run: |
+          git ls-files --error-unmatch openapi.json
+          uv run python scripts/export_openapi.py
+          git diff --exit-code -- openapi.json
+
+  docker:
+    name: Docker images (build, smoke test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint the Dockerfiles
+        run: |
+          docker build --check backend
+          docker build --check frontend
+      # Builds both images locally from compose.yaml; nothing is pushed.
+      - name: Build both images and start the stack
+        run: docker compose up --build --detach --wait --wait-timeout 120
+      - name: Smoke test
+        run: |
+          curl -fsS http://localhost:8000/health
+          curl -fsS -o /dev/null http://localhost:8000/
+          curl -fsS -o /dev/null http://localhost:3000/
+          curl -fsS -o /dev/null http://localhost:3000/privacy-policy
+          curl -fsSI http://localhost:3000/ \
+            | grep -iq "^content-security-policy: .*connect-src 'self' http://localhost:8000;"
+      - name: Show the logs
+        if: failure()
+        run: docker compose logs
+      - name: Stop the stack
+        if: always()
+        run: docker compose down
 
   audit:
     name: Dependency audit
@@ -65,7 +108,10 @@ jobs:
         run: pnpm audit --prod --audit-level high
       - name: Audit backend dependencies
         working-directory: backend
-        run: uvx pip-audit -r requirements.txt
+        run: |
+          uv export --locked --no-dev --no-hashes --no-emit-project --format requirements.txt \
+            --output-file "$RUNNER_TEMP/backend-requirements.txt"
+          uvx pip-audit --no-deps --disable-pip -r "$RUNNER_TEMP/backend-requirements.txt"
 
   secrets:
     name: Secret scan

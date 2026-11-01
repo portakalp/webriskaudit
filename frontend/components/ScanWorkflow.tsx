@@ -1,108 +1,108 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
+import { AlertCircle, FileText, RotateCcw } from "lucide-react"
 import { ScanForm } from "./ScanForm"
 import { InteractiveScanDashboard } from "./InteractiveScanDashboard"
-import { MiniReport } from "./MiniReport"
-import { AlertCircle, FileText, RotateCcw } from "lucide-react"
-import { GENERIC_ERROR, ScanError, loadSampleReport, scanDomain } from "@/lib/api"
-import type { ScanResult } from "@/lib/types"
+import { ReportView } from "./report/ReportView"
+import { ApiProblemError, GENERIC_ERROR, ScanError, loadSampleReport, scanDomain } from "@/lib/api"
+import type { ScanReport } from "@/lib/types"
 
 export type WorkflowStep = "form" | "scanning" | "report" | "error"
 
+interface ErrorMessage {
+  title: string
+  message: string
+}
+
+const SECONDARY_BUTTON =
+  "flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50"
+
 export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowStep) => void }) {
   const [step, setStep] = useState<WorkflowStep>("form")
-  const [scanResults, setScanResults] = useState<ScanResult | null>(null)
+  const [domain, setDomain] = useState("")
+  const [report, setReport] = useState<ScanReport | null>(null)
   const [isSample, setIsSample] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [animationComplete, setAnimationComplete] = useState(false)
-  const [apiComplete, setApiComplete] = useState(false)
+  const [error, setError] = useState<ErrorMessage | null>(null)
   const scanControllerRef = useRef<AbortController | null>(null)
 
-  // The report is shown once both the animation and the API call have finished
-  const currentStep: WorkflowStep =
-    step === "scanning" && animationComplete && apiComplete && scanResults ? "report" : step
-
-  // Notify parent of step changes
   useEffect(() => {
-    if (onStepChange) {
-      onStepChange(currentStep)
-    }
-  }, [currentStep, onStepChange])
+    onStepChange?.(step)
+  }, [step, onStepChange])
 
   // Cancel a running scan when the component unmounts
   useEffect(() => {
     return () => scanControllerRef.current?.abort()
   }, [])
 
-  const handleFormSubmit = async (domain: string) => {
+  const handleFormSubmit = async (target: string) => {
     scanControllerRef.current?.abort()
     const controller = new AbortController()
     scanControllerRef.current = controller
 
-    // Reset state from any previous scan
+    setDomain(target)
     setError(null)
-    setScanResults(null)
+    setReport(null)
     setIsSample(false)
-    setAnimationComplete(false)
-    setApiComplete(false)
-
-    // Transition to scanning state
     setStep("scanning")
 
     try {
-      const data = await scanDomain(domain, controller.signal)
-
-      // Report will show when the animation also completes
-      setScanResults(data)
-      setApiComplete(true)
+      // The report replaces the animation as soon as the API responds
+      const result = await scanDomain(target, controller.signal)
+      if (controller.signal.aborted) return
+      setReport(result)
+      setStep("report")
     } catch (err) {
       // Cancelled by a reset or unmount
       if (controller.signal.aborted) return
-
-      setError(err instanceof ScanError ? err.message : GENERIC_ERROR)
+      setError(describeError(err))
       setStep("error")
     }
   }
-
-  const handleAnimationComplete = useCallback(() => {
-    setAnimationComplete(true)
-  }, [])
 
   const handleViewSample = async () => {
     scanControllerRef.current?.abort()
     setError(null)
 
     try {
-      const sample = await loadSampleReport()
-      setScanResults(sample)
+      setReport(await loadSampleReport())
       setIsSample(true)
       setStep("report")
     } catch (err) {
-      setError(err instanceof ScanError ? err.message : GENERIC_ERROR)
+      setError(describeError(err))
       setStep("error")
     }
   }
 
   const handleReset = () => {
     scanControllerRef.current?.abort()
-    setStep("form")
-    setScanResults(null)
+    setDomain("")
+    setReport(null)
     setIsSample(false)
     setError(null)
+    setStep("form")
+  }
+
+  // Back to the form with the failed domain filled in
+  const handleRetry = () => {
+    setError(null)
+    setStep("form")
   }
 
   return (
     <div className="relative">
-      {/* Conditional Rendering Based on Step */}
-      {currentStep === "form" && (
+      <p role="status" aria-live="polite" className="sr-only">
+        {step === "scanning" ? `Scanning ${domain}. Most scans finish within a few seconds.` : ""}
+      </p>
+
+      {step === "form" && (
         <>
-          <ScanForm onSubmit={handleFormSubmit} isLoading={false} />
+          <ScanForm onSubmit={handleFormSubmit} initialValue={domain} />
           <p className="mt-3 text-center">
             <button
               type="button"
               onClick={handleViewSample}
-              className="text-xs text-slate-500 hover:text-slate-900 underline transition-colors"
+              className="rounded text-sm text-slate-700 underline underline-offset-2 transition-colors hover:text-slate-900"
             >
               View a sample report
             </button>
@@ -110,67 +110,51 @@ export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowS
         </>
       )}
 
-      {currentStep === "scanning" && (
-        <InteractiveScanDashboard onComplete={handleAnimationComplete} />
-      )}
+      {step === "scanning" && <InteractiveScanDashboard domain={domain} />}
 
-      {currentStep === "error" && (
+      {step === "error" && error && (
         <div className="mt-6 space-y-4 animate-in fade-in duration-300">
-          <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl flex items-start gap-3" role="alert">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <div role="alert" className="flex items-start gap-3 rounded-xl border-2 border-red-200 bg-red-50 p-4">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-700" aria-hidden="true" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-red-900">The scan could not be completed</p>
-              <p className="text-sm text-red-700 mt-1">{error}</p>
+              <p className="text-sm font-semibold text-red-900">{error.title}</p>
+              <p className="mt-1 text-sm text-red-800">{error.message}</p>
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            <button
-              onClick={handleReset}
-              className="flex-1 py-3 px-6 bg-white border-2 border-slate-200 text-slate-700 font-semibold text-sm rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors flex items-center justify-center gap-2"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Try Again</span>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button type="button" onClick={handleRetry} className={SECONDARY_BUTTON}>
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              Try again
             </button>
-            <button
-              onClick={handleViewSample}
-              className="flex-1 py-3 px-6 bg-white border-2 border-slate-200 text-slate-700 font-semibold text-sm rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors flex items-center justify-center gap-2"
-            >
-              <FileText className="w-4 h-4" />
-              <span>View Sample Report</span>
+            <button type="button" onClick={handleViewSample} className={SECONDARY_BUTTON}>
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              View sample report
             </button>
           </div>
         </div>
       )}
 
-      {currentStep === "report" && scanResults && (
-        <>
+      {step === "report" && report && (
+        <div className="space-y-6">
           {isSample && (
-            <div className="mt-6 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl text-sm text-amber-900" role="note">
+            <div role="note" className="rounded-xl border-2 border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
               Example report with illustrative values. It is not the result of a real scan.
             </div>
           )}
-
-          <MiniReport
-            score={scanResults.score}
-            riskLevel={scanResults.risk_level}
-            emailSecurity={scanResults.email_security}
-            serverSecurity={scanResults.server_security}
-            compliance={scanResults.compliance}
-
-            spfStatus={scanResults.spf_status}
-            dkimStatus={scanResults.dkim_status}
-            dmarcStatus={scanResults.dmarc_status}
-            blacklistStatus={scanResults.blacklist_status}
-            wafStatus={scanResults.waf_status}
-            sslStatus={scanResults.ssl_status}
-            serverLeak={scanResults.server_leak}
-            securityHeadersScore={scanResults.security_headers_score}
-            complianceRisk={scanResults.compliance_risk}
-            onReset={handleReset}
-          />
-        </>
+          <ReportView key={`${report.domain}-${report.scanned_at}`} report={report} onReset={handleReset} />
+        </div>
       )}
     </div>
   )
+}
+
+function describeError(err: unknown): ErrorMessage {
+  if (err instanceof ApiProblemError) {
+    return { title: err.title, message: err.message }
+  }
+  return {
+    title: "The scan could not be completed",
+    message: err instanceof ScanError ? err.message : GENERIC_ERROR,
+  }
 }

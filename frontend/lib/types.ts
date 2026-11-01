@@ -1,35 +1,19 @@
-export type RiskLevel = "SECURE" | "MODERATE" | "CRITICAL"
+// API types, derived from the generated lib/api-types.ts (run "pnpm gen:api"
+// after backend/openapi.json changes). Nothing here is written by hand.
+import type { components, paths } from "./api-types"
 
-export interface CategoryScore {
-  score: number
-  max: number
-  percentage: number
-  risk_level: RiskLevel
-  tests: string[]
-}
+type Schemas = components["schemas"]
+type ScanOperation = paths["/api/v1/scan"]["post"]
 
-// Response body of POST /api/scan
-export interface ScanResult {
-  domain: string
-  score: number
-  risk_level: RiskLevel
+export type ScanRequest = ScanOperation["requestBody"]["content"]["application/json"]
+export type ScanReport = ScanOperation["responses"][200]["content"]["application/json"]
+export type ProblemDetails = ScanOperation["responses"][422]["content"]["application/problem+json"]
 
-  // Email & Reputation
-  spf_status: boolean
-  dkim_status: boolean
-  dmarc_status: boolean
-  blacklist_status: boolean // true = not listed
-
-  // Server Security
-  waf_status: boolean
-  ssl_status: boolean
-  server_leak: boolean // true = server banner discloses software
-  security_headers_score: number // required security headers present, 0-5
-
-  // Compliance
-  compliance_risk: boolean // true = no privacy policy found
-
-  email_security: CategoryScore
-  server_security: CategoryScore
-  compliance: CategoryScore
-}
+export type CheckResult = Schemas["CheckResult"]
+export type CategorySummary = Schemas["CategorySummary"]
+export type Category = Schemas["Category"]
+export type Status = Schemas["Status"]
+export type Evidence = Schemas["Evidence"]
+export type Reference = Schemas["Reference"]
+export type Coverage = Schemas["Coverage"]
+export type Grade = NonNullable<ScanReport["grade"]>

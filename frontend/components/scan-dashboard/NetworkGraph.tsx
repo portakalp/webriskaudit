@@ -1,258 +1,136 @@
-"use client"
+import type { NodeStatus } from "./types"
 
-import { CheckCircle, XCircle, Globe, Lock, Mail, ShieldCheck, Shield, FileCheck, AlertTriangle, FileText, Calculator } from "lucide-react"
-import type { GraphNode, NodeStatus } from "./types"
-
-interface NetworkGraphProps {
-  completedTests: string[]
-  activeTests: string[]
+// One node per check the API runs: email and transport checks on the inner
+// ring, header and informational checks on the outer ring.
+const GRAPH_NODES = {
+  inner: [
+    { id: "spf", label: "SPF" },
+    { id: "dmarc", label: "DMARC" },
+    { id: "dkim", label: "DKIM" },
+    { id: "tls", label: "TLS" },
+    { id: "redirect", label: "Redirect" },
+    { id: "hsts", label: "HSTS" },
+  ],
+  outer: [
+    { id: "csp", label: "CSP" },
+    { id: "frames", label: "Frames" },
+    { id: "nosniff", label: "Nosniff" },
+    { id: "referrer", label: "Referrer" },
+    { id: "cookies", label: "Cookies" },
+    { id: "server", label: "Server" },
+    { id: "cdn", label: "CDN" },
+    { id: "privacy", label: "Privacy" },
+    { id: "permissions", label: "Permissions" },
+    { id: "deprecated", label: "Legacy" },
+  ],
 }
 
-// Security test definitions with icons
-const SECURITY_TESTS = [
-  { id: "dns", name: "DNS", Icon: Globe },
-  { id: "ssl", name: "SSL", Icon: Lock },
-  { id: "spf", name: "SPF", Icon: Mail },
-  { id: "dmarc", name: "DMARC", Icon: ShieldCheck },
-  { id: "waf", name: "WAF", Icon: Shield },
-  { id: "headers", name: "Headers", Icon: FileCheck },
-  { id: "blacklist", name: "Blacklist", Icon: AlertTriangle },
-  { id: "compliance", name: "Privacy", Icon: FileText },
-  { id: "score", name: "Score", Icon: Calculator },
+const SIZE = 440
+const CENTER = SIZE / 2
+const INNER_RADIUS = 92
+const OUTER_RADIUS = 168
+const NODE_RADIUS = 14
+
+const NODE_FILL: Record<NodeStatus, string> = {
+  idle: "#e2e8f0", // slate-200
+  scanning: "#ea580c", // orange-600
+  complete: "#059669", // emerald-600
+}
+
+const LABEL_CLASS: Record<NodeStatus, string> = {
+  idle: "fill-slate-600",
+  scanning: "fill-orange-800",
+  complete: "fill-emerald-800",
+}
+
+interface PlacedNode {
+  id: string
+  label: string
+  x: number
+  y: number
+}
+
+function placeRing(nodes: { id: string; label: string }[], radius: number, offset: number): PlacedNode[] {
+  return nodes.map((node, index) => {
+    const angle = -Math.PI / 2 + offset + (2 * Math.PI * index) / nodes.length
+    return { ...node, x: CENTER + radius * Math.cos(angle), y: CENTER + radius * Math.sin(angle) }
+  })
+}
+
+// The outer ring is turned by half a step so its nodes sit between the inner ones.
+const PLACED: PlacedNode[] = [
+  ...placeRing(GRAPH_NODES.inner, INNER_RADIUS, 0),
+  ...placeRing(GRAPH_NODES.outer, OUTER_RADIUS, Math.PI / GRAPH_NODES.outer.length),
 ]
 
-export function NetworkGraph({ completedTests, activeTests }: NetworkGraphProps) {
-  const centerX = 200
-  const centerY = 200
-  const innerRadius = 80
-  const outerRadius = 140
+interface NetworkGraphProps {
+  completed: ReadonlySet<string>
+  active: ReadonlySet<string>
+}
 
-  // Calculate positions for nodes in circular layout
-  const getNodePosition = (index: number, total: number, radius: number) => {
-    const angle = (index * 2 * Math.PI) / total - Math.PI / 2
-    return {
-      x: centerX + radius * Math.cos(angle),
-      y: centerY + radius * Math.sin(angle),
-    }
-  }
-
-  // Determine node status
-  const getNodeStatus = (testId: string): NodeStatus => {
-    if (completedTests.includes(testId)) return "complete"
-    if (activeTests.includes(testId)) return "scanning"
+/** Decorative graph of the checks; the scan's status is announced elsewhere. */
+export function NetworkGraph({ completed, active }: NetworkGraphProps) {
+  const statusOf = (id: string): NodeStatus => {
+    if (completed.has(id)) return "complete"
+    if (active.has(id)) return "scanning"
     return "idle"
   }
 
-  // Create nodes array with positions
-  const nodes: GraphNode[] = SECURITY_TESTS.map((test, index) => {
-    const isInnerRing = index < 5
-    const ringIndex = isInnerRing ? index : index - 5
-    const ringTotal = isInnerRing ? 5 : SECURITY_TESTS.length - 5
-    const radius = isInnerRing ? innerRadius : outerRadius
-    const position = getNodePosition(ringIndex, ringTotal, radius)
-
-    return {
-      id: test.id,
-      name: test.name,
-      status: getNodeStatus(test.id),
-      x: position.x,
-      y: position.y,
-    }
-  })
-
-  // Get node color based on status
-  const getNodeColor = (status: NodeStatus) => {
-    switch (status) {
-      case "complete":
-        return "#10b981" // emerald-500
-      case "scanning":
-        return "#f97316" // orange-500
-      case "failed":
-        return "#ef4444" // red-500
-      default:
-        return "#94a3b8" // slate-400
-    }
-  }
-
-  // Get status icon
-  const getStatusIcon = (status: NodeStatus) => {
-    if (status === "complete") return <CheckCircle className="w-4 h-4" />
-    if (status === "failed") return <XCircle className="w-4 h-4" />
-    return null
-  }
-
   return (
-    <div className="w-full bg-white border-2 border-slate-200 rounded-xl p-6 overflow-hidden">
-      <svg
-        viewBox="0 0 400 400"
-        className="w-full h-auto"
-        style={{ maxHeight: "500px" }}
-      >
-        {/* Grid background pattern */}
-        <defs>
-          <pattern
-            id="grid"
-            width="20"
-            height="20"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M 20 0 L 0 0 0 20"
-              fill="none"
-              stroke="#e2e8f0"
-              strokeWidth="0.5"
+    <div className="mx-auto w-full max-w-md rounded-xl border-2 border-slate-200 bg-white p-3">
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-auto w-full" aria-hidden="true" focusable="false">
+        {PLACED.map((node) => {
+          const status = statusOf(node.id)
+          return (
+            <line
+              key={`line-${node.id}`}
+              x1={CENTER}
+              y1={CENTER}
+              x2={node.x}
+              y2={node.y}
+              stroke={status === "idle" ? "#cbd5e1" : NODE_FILL[status]}
+              strokeWidth={status === "scanning" ? 2 : 1}
+              strokeDasharray={status === "scanning" ? "5 5" : undefined}
+              opacity={status === "idle" ? 0.5 : 0.8}
             />
-          </pattern>
+          )
+        })}
 
-          {/* Gradient for scanning nodes */}
-          <linearGradient id="nodeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#f97316" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#ea580c" stopOpacity="1" />
-          </linearGradient>
-
-          {/* Enhanced glow filter for scanning nodes */}
-          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="4" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-
-          {/* Shadow filter for completed nodes */}
-          <filter id="shadow">
-            <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.3" />
-          </filter>
-        </defs>
-
-        {/* Background grid */}
-        <rect width="400" height="400" fill="url(#grid)" opacity="0.3" />
-
-        {/* Connection lines from center to each node */}
-        {nodes.map((node) => (
-          <line
-            key={`line-${node.id}`}
-            x1={centerX}
-            y1={centerY}
-            x2={node.x}
-            y2={node.y}
-            stroke={
-              node.status === "scanning"
-                ? "#f97316"
-                : node.status === "complete"
-                ? "#10b981"
-                : "#cbd5e1"
-            }
-            strokeWidth={node.status === "scanning" ? "2" : "1"}
-            strokeDasharray={node.status === "scanning" ? "5,5" : "none"}
-            className={node.status === "scanning" ? "animate-pulse" : ""}
-            opacity={node.status === "idle" ? 0.3 : 0.8}
-          />
-        ))}
-
-        {/* Center domain node */}
-        <circle
-          cx={centerX}
-          cy={centerY}
-          r="30"
-          fill="#f8fafc"
-          stroke="#f97316"
-          strokeWidth="3"
-          className="transition-all duration-300"
-        />
-        <text
-          x={centerX}
-          y={centerY}
-          textAnchor="middle"
-          dy="0.3em"
-          className="text-xs font-bold fill-slate-900"
-        >
+        <circle cx={CENTER} cy={CENTER} r={32} fill="#f8fafc" stroke="#c2410c" strokeWidth={3} />
+        <text x={CENTER} y={CENTER} textAnchor="middle" dy="0.35em" className="fill-slate-900 text-[11px] font-bold">
           Domain
         </text>
 
-        {/* Security test nodes */}
-        {nodes.map((node) => {
-          const nodeColor = getNodeColor(node.status)
-          const isScanning = node.status === "scanning"
-          const isComplete = node.status === "complete"
-
-          // Calculate progress ring properties
-          const progressRadius = 24
-          const circumference = 2 * Math.PI * progressRadius
-          const progressOffset = isComplete ? 0 : circumference
-
+        {PLACED.map((node) => {
+          const status = statusOf(node.id)
           return (
             <g key={node.id}>
-              {/* Background ring for progress */}
               <circle
                 cx={node.x}
                 cy={node.y}
-                r={progressRadius}
-                fill="none"
-                stroke="#e2e8f0"
-                strokeWidth="3"
-                opacity="0.3"
+                r={NODE_RADIUS}
+                fill={NODE_FILL[status]}
+                stroke={status === "idle" ? "#94a3b8" : NODE_FILL[status]}
+                strokeWidth={2}
+                className={`transition-colors duration-300 ${status === "scanning" ? "motion-safe:animate-pulse" : ""}`}
               />
-
-              {/* Animated progress ring */}
-              <circle
-                cx={node.x}
-                cy={node.y}
-                r={progressRadius}
-                fill="none"
-                stroke={nodeColor}
-                strokeWidth="3"
-                strokeDasharray={circumference}
-                strokeDashoffset={progressOffset}
-                strokeLinecap="round"
-                className="transition-all duration-1000 ease-out"
-                transform={`rotate(-90 ${node.x} ${node.y})`}
-                opacity={node.status === "idle" ? 0 : 0.8}
-              />
-
-              {/* Node circle with gradient */}
-              <circle
-                cx={node.x}
-                cy={node.y}
-                r="20"
-                fill={isScanning ? "url(#nodeGradient)" : nodeColor}
-                stroke={nodeColor}
-                strokeWidth="2"
-                filter={isScanning ? "url(#glow)" : "url(#shadow)"}
-                className={`transition-all duration-300 ${
-                  isScanning ? "animate-pulse" : ""
-                }`}
-                opacity={node.status === "idle" ? 0.5 : 1}
-              />
-
-              {/* Status icon (checkmark or X) */}
-              {node.status !== "idle" && node.status !== "scanning" && (
-                <foreignObject
-                  x={node.x - 10}
-                  y={node.y - 10}
-                  width="20"
-                  height="20"
-                >
-                  <div className="flex items-center justify-center w-full h-full text-white">
-                    {getStatusIcon(node.status)}
-                  </div>
-                </foreignObject>
+              {status === "complete" && (
+                <path
+                  d={`M ${node.x - 5} ${node.y} l 3.5 3.5 l 6.5 -7`}
+                  fill="none"
+                  stroke="#ffffff"
+                  strokeWidth={2.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               )}
-
-              {/* Test name label with better styling */}
               <text
                 x={node.x}
-                y={node.y + 40}
+                y={node.y + NODE_RADIUS + 14}
                 textAnchor="middle"
-                className={`text-[11px] font-semibold ${
-                  node.status === "scanning"
-                    ? "fill-orange-600"
-                    : node.status === "complete"
-                    ? "fill-emerald-600"
-                    : "fill-slate-500"
-                }`}
+                className={`text-[11px] font-semibold ${LABEL_CLASS[status]}`}
               >
-                {node.name}
+                {node.label}
               </text>
             </g>
           )
