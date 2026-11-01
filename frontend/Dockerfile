@@ -27,7 +27,7 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL=https://api.webriskaudit.com
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
-# _headers is Cloudflare Pages configuration; nginx.conf sends those headers here.
+# _headers is for Workers static assets; nginx.conf sends those headers here.
 RUN pnpm build && rm -f out/_headers
 
 # Let the CSP's connect-src allow the API origin baked into the build.

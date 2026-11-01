@@ -1,0 +1,23 @@
+// The site as a Cloudflare Worker with static assets only: no Worker script,
+// every request is answered from the static export in out/ (pnpm build), and
+// out/_headers (from public/_headers) sets the response headers. The
+// deploy-site job in .github/workflows/ci.yml runs "wrangler deploy" here.
+// Reference: https://developers.cloudflare.com/workers/wrangler/configuration/
+{
+  "name": "webriskaudit-web",
+  "compatibility_date": "2026-10-16",
+  "assets": {
+    "directory": "./out",
+    // Paths without a file get out/404.html with status 404.
+    "not_found_handling": "404-page",
+    // /privacy-policy serves privacy-policy.html; /privacy-policy.html redirects there.
+    "html_handling": "auto-trailing-slash"
+  },
+  // Served on webriskaudit-web.<subdomain>.workers.dev until the cutover adds
+  // the webriskaudit.com custom domain (docs/DEPLOYMENT.md).
+  "workers_dev": true,
+  // No public URLs for individual versions.
+  "preview_urls": false,
+  // Wrangler sends no usage data from this project.
+  "send_metrics": false
+}

@@ -128,7 +128,7 @@ backend/      FastAPI service and the scanner package (src/webriskaudit)
 frontend/     Next.js static site served at webriskaudit.com
 docs/         Methodology, threat model, deployment runbook, decisions (docs/adr/)
 infra/gcp/    Terraform for the API's Google Cloud project (docs/DEPLOYMENT.md)
-deploy/       Cloud Run service spec and the egress firewall check
+deploy/       Cloud Run service spec, egress firewall check, post-deploy smoke tests
 compose.yaml  Local Docker stack: the site and the API
 Makefile      Common tasks; run "make" to list them
 ```
@@ -210,11 +210,11 @@ The API's TypeScript types (`frontend/lib/api-types.ts`) are generated from
   documents the API either way.
 - The site's API URL (`NEXT_PUBLIC_API_URL`) is inlined at build time, and the
   site's Content Security Policy must allow its origin in `connect-src`, or
-  the browser blocks every scan. For Cloudflare Pages, set
-  `NEXT_PUBLIC_API_URL=https://api.webriskaudit.com` in the build settings,
+  the browser blocks every scan. The deploy workflow builds the site with the
+  repository variable `NEXT_PUBLIC_API_URL` (`https://api.webriskaudit.com`),
   the origin that [`frontend/public/_headers`](frontend/public/_headers)
-  allows, and change both together. The Docker image fills in `connect-src`
-  from its build argument.
+  allows, and refuses to deploy when they differ; change both together. The
+  Docker image fills in `connect-src` from its build argument.
 
 ## API
 

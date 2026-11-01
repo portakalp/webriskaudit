@@ -4,13 +4,17 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Runs CI, and on main also the deploy jobs (gh workflow run ci.yml --ref main).
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# A run on main may be deploying, so a newer push waits for it instead of
+# cancelling it. Other branches only cancel stale CI.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   frontend:
@@ -147,3 +151,257 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
+
+  # Builds the API image, replaces the Cloud Run service with
+  # deploy/cloudrun/service.yaml and smoke-tests it through Cloudflare; on
+  # failure or cancel, traffic goes back to the revision that served before.
+  # Runs only when the repository variable DEPLOY_API is "true", for pushes to
+  # main and manual runs on main, after every CI job has passed
+  # (docs/DEPLOYMENT.md).
+  deploy-api:
+    name: Deploy API (Cloud Run)
+    needs: [frontend, backend, docker, audit, terraform, secrets]
+    if: >-
+      vars.DEPLOY_API == 'true' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    # The deploy and smoke test steps have their own limits, so a slow one
+    # fails well before this and the rollback step still has time to run.
+    timeout-minutes: 50
+    environment:
+      name: production
+      url: https://api.webriskaudit.com/
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation
+    # Shared with rollback-api.yml: one deploy or rollback runs at a time and is
+    # never cancelled, but GitHub keeps only one waiting; a newer one replaces it.
+    concurrency:
+      group: deploy-api-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash # with -o pipefail
+    env:
+      REGION: europe-west1
+      SERVICE: webriskaudit-api
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      IMAGE: europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/webriskaudit/api
+      API_URL: https://api.webriskaudit.com
+      SITE_ORIGIN: https://webriskaudit.com
+      API_LB_IP: ${{ vars.API_LB_IP }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the repository variables
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          DEPLOYER_SA: ${{ vars.GCP_DEPLOYER_SA }}
+        run: |
+          status=0
+          check() {
+            if [[ ! $2 =~ $3 ]]; then
+              echo "::error::Repository variable $1 is missing or malformed (docs/DEPLOYMENT.md, setup step 7)."
+              status=1
+            fi
+          }
+          check GCP_PROJECT_ID "$PROJECT_ID" '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'
+          check GCP_WIF_PROVIDER "$WIF_PROVIDER" '^projects/[0-9]+/locations/global/workloadIdentityPools/github/providers/webriskaudit$'
+          check GCP_DEPLOYER_SA "$DEPLOYER_SA" "^github-deployer@${PROJECT_ID}[.]iam[.]gserviceaccount[.]com$"
+          check API_LB_IP "$API_LB_IP" '^([0-9]{1,3}[.]){3}[0-9]{1,3}$'
+          exit "$status"
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          token_format: access_token
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: europe-west1-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # No build cache, so the deployed image comes from the repository alone.
+      # No provenance attestation: one manifest per deploy, which is what the
+      # registry's keep-10 cleanup policy counts.
+      - id: build
+        name: Build and push the API image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          platforms: linux/amd64
+          build-args: REVISION=${{ github.sha }}
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          provenance: false
+          sbom: false
+          push: true
+      - id: previous
+        name: Record the revision that serves now
+        run: |
+          revision=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT_ID" --format=json \
+            | jq -r '[.status.traffic[]? | select((.percent // 0) > 0)] | max_by(.percent) | .revisionName // empty')
+          if [[ ! $revision =~ ^[a-z0-9-]+$ ]]; then
+            echo "::warning::No revision serves traffic, so a failed deploy cannot be rolled back automatically."
+            revision=""
+          fi
+          echo "Serving now: ${revision:-none}"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - name: Fill in the service spec
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          if [[ ! $DIGEST =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The build returned no image digest ('$DIGEST')."
+            exit 1
+          fi
+          sed -e "s|__PROJECT__|${PROJECT_ID}|g" -e "s|__IMAGE__|${IMAGE}@${DIGEST}|g" \
+            deploy/cloudrun/service.yaml > "$RUNNER_TEMP/service.yaml"
+          if grep -n '__[A-Z0-9_]*__' "$RUNNER_TEMP/service.yaml"; then
+            echo "::error::deploy/cloudrun/service.yaml has a placeholder that this step does not fill in."
+            exit 1
+          fi
+          echo "Image: ${IMAGE}@${DIGEST}"
+      # gcloud run services replace; it returns once the new revision is ready.
+      - id: deploy
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
+        timeout-minutes: 10
+        with:
+          metadata: ${{ runner.temp }}/service.yaml
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          region: europe-west1
+      - name: Smoke test
+        timeout-minutes: 20
+        env:
+          EXPECTED_REVISION: ${{ github.sha }}
+        run: deploy/checks/api_smoke.sh
+      # Also runs when the job is cancelled or times out once the deploy step
+      # has started. GitHub then allows about 5 minutes, so traffic moves first.
+      - name: Roll back to the previous revision
+        if: >-
+          (failure() || cancelled()) && steps.previous.outputs.revision != '' &&
+          (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure' ||
+          steps.deploy.outcome == 'cancelled')
+        timeout-minutes: 7
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.revision }}
+        run: |
+          gcloud run services update-traffic "$SERVICE" --region "$REGION" --project "$PROJECT_ID" \
+            --to-revisions="${PREVIOUS}=100"
+          # The rolled-back revision's instance may need a few minutes to start.
+          # Any 2xx will do: on the first deploy that revision is Terraform's
+          # placeholder, which answers every path with an HTML page.
+          deadline=$((SECONDS + 240))
+          until curl -fsS -o /dev/null --max-time 10 "$API_URL/health"; do
+            if ((SECONDS >= deadline)); then
+              echo "::error::Traffic is back on ${PREVIOUS}, but ${API_URL}/health still fails."
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::error::The deploy of ${GITHUB_SHA} did not pass; all traffic is back on ${PREVIOUS}."
+      - name: Summary
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PREVIOUS: ${{ steps.previous.outputs.revision }}
+        run: |
+          revision=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT_ID" \
+            --format='value(status.latestReadyRevisionName)')
+          {
+            echo "### API deployed"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Revision: \`${revision}\` (before: \`${PREVIOUS:-none}\`; roll back with rollback-api.yml)"
+            echo "- Image: \`${IMAGE}@${DIGEST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Builds the site with NEXT_PUBLIC_API_URL and deploys it to the Worker
+  # webriskaudit-web (frontend/wrangler.jsonc), then checks its pages and
+  # headers. Runs only when the repository variable DEPLOY_SITE is "true",
+  # after deploy-api: also when that was skipped, never when a job before it
+  # failed or was cancelled.
+  deploy-site:
+    name: Deploy site (Cloudflare Workers)
+    needs: [frontend, backend, docker, audit, terraform, secrets, deploy-api]
+    if: >-
+      vars.DEPLOY_SITE == 'true' && !cancelled() &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    permissions:
+      contents: read
+    concurrency:
+      group: deploy-site-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash # with -o pipefail
+        working-directory: frontend
+    env:
+      NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+      NEXT_TELEMETRY_DISABLED: "1"
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the repository variables
+        env:
+          ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          TOKEN_SET: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        run: |
+          status=0
+          if [[ ! $NEXT_PUBLIC_API_URL =~ ^https://[a-z0-9.-]+$ ]]; then
+            echo "::error::Repository variable NEXT_PUBLIC_API_URL must be the API's https origin, such as https://api.webriskaudit.com."
+            status=1
+          fi
+          if [[ ! $ACCOUNT_ID =~ ^[0-9a-f]{32}$ ]]; then
+            echo "::error::Repository variable CLOUDFLARE_ACCOUNT_ID is missing or malformed (docs/DEPLOYMENT.md, setup step 7)."
+            status=1
+          fi
+          if [[ $TOKEN_SET != true ]]; then
+            echo "::error::Secret CLOUDFLARE_API_TOKEN is not set in the production environment (docs/DEPLOYMENT.md, setup step 7)."
+            status=1
+          fi
+          exit "$status"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: frontend/package.json
+      # No dependency cache, so the deployed build comes from the lock file alone.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Check that the build calls the API and its CSP allows it
+        run: |
+          if ! grep -rqF -- "$NEXT_PUBLIC_API_URL" out/_next/static; then
+            echo "::error::The build does not contain ${NEXT_PUBLIC_API_URL}."
+            exit 1
+          fi
+          if ! grep -qF -- "connect-src 'self' ${NEXT_PUBLIC_API_URL};" out/_headers; then
+            echo "::error::connect-src in frontend/public/_headers does not allow ${NEXT_PUBLIC_API_URL}; the browser would block every scan."
+            exit 1
+          fi
+      - id: deploy
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          # Installed with "pnpm add" for this run only. Dependabot does not
+          # update this input; check it by hand (docs/DEPLOYMENT.md).
+          wranglerVersion: 4.151.1
+          packageManager: pnpm
+          workingDirectory: frontend
+          command: deploy
+      - name: Smoke test
+        env:
+          SITE_URL: ${{ steps.deploy.outputs.deployment-url }}
+          API_ORIGIN: ${{ vars.NEXT_PUBLIC_API_URL }}
+        run: ../deploy/checks/site_smoke.sh
