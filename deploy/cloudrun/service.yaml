@@ -1,0 +1,80 @@
+# Cloud Run service of the API, applied by the deploy workflow with
+# "gcloud run services replace" (google-github-actions/deploy-cloudrun with
+# metadata). Replace swaps the whole spec, so this file is complete: anything
+# missing here is reset to its default on the next deploy.
+#
+# Placeholders filled in by CI: __PROJECT__ (project ID) and __IMAGE__ (the
+# pushed image by digest). Names match infra/gcp; see docs/DEPLOYMENT.md.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: webriskaudit-api
+  labels:
+    cloud.googleapis.com/location: europe-west1
+  annotations:
+    # Only the load balancer (and so Cloudflare) can reach the service.
+    run.googleapis.com/ingress: internal-and-cloud-load-balancing
+    # Exactly one instance: rate limits and the report cache live in memory.
+    run.googleapis.com/scalingMode: manual
+    run.googleapis.com/manualInstanceCount: "1"
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+        # Request-based billing: CPU only while a request is being handled.
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/startup-cpu-boost: "true"
+        # Direct VPC egress: all outbound traffic goes through the VPC, where
+        # the egress firewall (network tag) and Cloud NAT apply.
+        run.googleapis.com/network-interfaces: '[{"network":"webriskaudit","subnetwork":"webriskaudit-euw1","tags":"webriskaudit-api"}]'
+        run.googleapis.com/vpc-access-egress: all-traffic
+    spec:
+      containerConcurrency: 40
+      # Below Cloudflare's 125 s proxy read timeout, above the app's worst case.
+      timeoutSeconds: 120
+      serviceAccountName: api-runtime@__PROJECT__.iam.gserviceaccount.com
+      containers:
+        - image: __IMAGE__
+          ports:
+            - name: http1
+              containerPort: 8000
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          env:
+            - name: ALLOWED_ORIGINS
+              value: https://webriskaudit.com
+            - name: DNS_NAMESERVERS
+              value: 1.1.1.1,9.9.9.10
+            - name: CLIENT_IP_HEADER
+              value: CF-Connecting-IP
+            - name: API_DOCS_ENABLED
+              value: "false"
+            # Comma-separated; two values during a rotation. Read at instance start.
+            - name: ORIGIN_AUTH_SECRETS
+              valueFrom:
+                secretKeyRef:
+                  name: webriskaudit-origin-auth
+                  key: latest
+          # Direct VPC egress can take a minute or more to connect at instance
+          # start, so the startup probe allows 180 s (36 x 5 s).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+  traffic:
+    - latestRevision: true
+      percent: 100
