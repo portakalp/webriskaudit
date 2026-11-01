@@ -22,9 +22,8 @@ export function MetricCard({
 }: MetricCardProps) {
   // Use animated counter for numeric values when animated=true
   const numericValue = typeof value === "number" ? value : 0
-  const displayValue = animated
-    ? useAnimatedCounter(numericValue, 800)
-    : value
+  const animatedValue = useAnimatedCounter(numericValue, 800)
+  const displayValue = animated ? animatedValue : value
 
   // Format the display value
   const formattedValue =

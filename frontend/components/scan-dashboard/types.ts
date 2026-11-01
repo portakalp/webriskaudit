@@ -20,7 +20,6 @@ export interface ScanPhase {
 export interface DashboardMetrics {
   testsCompleted: number
   score: number
-  threats: number
   dataPoints: number
 }
 

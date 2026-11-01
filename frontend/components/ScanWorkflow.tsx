@@ -10,11 +10,15 @@ import type { ScanResult } from "@/lib/types"
 export type WorkflowStep = "form" | "scanning" | "report"
 
 export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowStep) => void }) {
-  const [currentStep, setCurrentStep] = useState<WorkflowStep>("form")
+  const [step, setStep] = useState<WorkflowStep>("form")
   const [scanResults, setScanResults] = useState<ScanResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [animationComplete, setAnimationComplete] = useState(false)
   const [apiComplete, setApiComplete] = useState(false)
+
+  // The report is shown once both the animation and the API call have finished
+  const currentStep: WorkflowStep =
+    step === "scanning" && animationComplete && apiComplete && scanResults ? "report" : step
 
   // Notify parent of step changes
   useEffect(() => {
@@ -22,13 +26,6 @@ export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowS
       onStepChange(currentStep)
     }
   }, [currentStep, onStepChange])
-
-  // When both animation and API are complete, show report
-  useEffect(() => {
-    if (animationComplete && apiComplete && scanResults) {
-      setCurrentStep("report")
-    }
-  }, [animationComplete, apiComplete, scanResults])
 
   const handleFormSubmit = async (domain: string) => {
     // Clear any previous errors
@@ -39,7 +36,7 @@ export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowS
     setApiComplete(false)
 
     // Transition to scanning state
-    setCurrentStep("scanning")
+    setStep("scanning")
 
     try {
       // Get API URL from environment
@@ -76,7 +73,7 @@ export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowS
       )
 
       // Go back to form
-      setCurrentStep("form")
+      setStep("form")
     }
   }
 
@@ -85,7 +82,7 @@ export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowS
   }, [])
 
   const handleReset = () => {
-    setCurrentStep("form")
+    setStep("form")
     setScanResults(null)
     setError(null)
   }

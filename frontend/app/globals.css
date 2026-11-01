@@ -76,8 +76,8 @@
 }
 
 @theme inline {
-  --font-sans: "Plus Jakarta Sans", "Inter", "Inter Fallback";
-  --font-mono: "JetBrains Mono", "Fira Code", "Geist Mono", monospace;
+  --font-sans: var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

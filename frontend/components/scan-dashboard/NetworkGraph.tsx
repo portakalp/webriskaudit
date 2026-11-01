@@ -172,8 +172,7 @@ export function NetworkGraph({ completedTests, activeTests }: NetworkGraphProps)
         </text>
 
         {/* Security test nodes */}
-        {nodes.map((node, index) => {
-          const TestIcon = SECURITY_TESTS[index].Icon
+        {nodes.map((node) => {
           const nodeColor = getNodeColor(node.status)
           const isScanning = node.status === "scanning"
           const isComplete = node.status === "complete"
