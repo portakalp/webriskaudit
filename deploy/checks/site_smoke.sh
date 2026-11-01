@@ -23,14 +23,23 @@ fail() {
   exit 1
 }
 
-# GET $SITE_URL$1. Sets STATUS and HEADERS (JSON: lower-case names, values in
+# GET $SITE_URL$1. Sets STATUS (000 when there is no response, such as a DNS,
+# connection or timeout error) and HEADERS (JSON: lower-case names, values in
 # arrays, from the final response); the body is in $work/body.
-fetch() {
+try_fetch() {
   local out
-  out=$(curl -sS --max-time 15 -o "$work/body" -w '%{http_code} %{header_json}' "$SITE_URL$1") ||
-    fail "GET $1: no response"
-  STATUS=${out%% *}
-  HEADERS=${out#* }
+  if out=$(curl -sS --max-time 15 -o "$work/body" -w '%{http_code} %{header_json}' "$SITE_URL$1"); then
+    STATUS=${out%% *}
+    HEADERS=${out#* }
+  else
+    STATUS=000
+    HEADERS='{}'
+  fi
+}
+
+fetch() {
+  try_fetch "$1"
+  [[ $STATUS != 000 ]] || fail "GET $1: no response"
 }
 
 # The security headers every page must carry, once each.
@@ -50,11 +59,17 @@ check_page() {
   echo "ok: GET $path with one CSP allowing $API_ORIGIN"
 }
 
+# A new workers.dev subdomain may at first not resolve or not answer.
 for ((i = 1; i <= ATTEMPTS; i++)); do
-  fetch /
+  try_fetch /
   [[ $STATUS == 200 ]] && break
-  ((i == ATTEMPTS)) || sleep 10
+  if ((i < ATTEMPTS)); then
+    if [[ $STATUS == 000 ]]; then reason="no response"; else reason="HTTP $STATUS"; fi
+    echo "GET /: $reason (attempt $i of $ATTEMPTS); retrying in 10 s"
+    sleep 10
+  fi
 done
+[[ $STATUS != 000 ]] || fail "GET /: no response after $ATTEMPTS attempts"
 check_page /
 
 # A build asset, which _headers marks as immutable.
