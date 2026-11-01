@@ -1,0 +1,36 @@
+{
+  "_placeholder": true,
+  "domain": "webriskaudit.com",
+  "score": 84,
+  "risk_level": "SECURE",
+  "spf_status": true,
+  "dkim_status": false,
+  "dmarc_status": true,
+  "blacklist_status": true,
+  "waf_status": true,
+  "ssl_status": true,
+  "server_leak": false,
+  "security_headers_score": 2,
+  "compliance_risk": false,
+  "email_security": {
+    "score": 30,
+    "max": 35,
+    "percentage": 85.7,
+    "risk_level": "SECURE",
+    "tests": []
+  },
+  "server_security": {
+    "score": 40,
+    "max": 50,
+    "percentage": 80.0,
+    "risk_level": "SECURE",
+    "tests": []
+  },
+  "compliance": {
+    "score": 10,
+    "max": 10,
+    "percentage": 100.0,
+    "risk_level": "SECURE",
+    "tests": []
+  }
+}
