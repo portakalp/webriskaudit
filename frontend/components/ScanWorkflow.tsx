@@ -149,7 +149,7 @@ export function ScanWorkflow({ onStepChange }: { onStepChange?: (step: WorkflowS
         <>
           {isSample && (
             <div className="mt-6 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl text-sm text-amber-900" role="note">
-              Sample report for webriskaudit.com, captured 1 November 2026. The live scanner API is being rebuilt.
+              Example report with illustrative values. It is not the result of a real scan.
             </div>
           )}
 
