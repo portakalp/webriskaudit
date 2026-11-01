@@ -109,6 +109,9 @@ Do this first if the repository is going public before launch.
 5. Settings → Environments → **New environment** `production` →
    Deployment branches → **Selected branches** → `main`. Add no reviewers,
    or automatic deploys wait for approval.
+6. Settings → Advanced Security → **Private vulnerability reporting →
+   Enable**. It is off by default, and [SECURITY.md](../SECURITY.md) sends
+   reporters to it.
 
 On GitHub Free, rulesets and environments only work in public
 repositories. If the repository stays private, skip steps 4 and 5, keep
@@ -528,7 +531,9 @@ production and preview deployments are off. In one session at a quiet hour
    zone's HSTS and the site's `_headers` produce two HSTS headers (harmless,
    but note it).
 7. Merge the follow-up that adds the custom domain route to
-   `wrangler.jsonc` and sets `workers_dev: false`.
+   `wrangler.jsonc`, sets `workers_dev: false`, and removes the README's
+   "v2 rebuild in progress" status note and its sentence saying the live
+   site still serves v1.
 
 Cutover rollback (if not fixed within 15 minutes): remove the Worker's
 custom domain; delete the Advanced Certificate it created, if any (it is
