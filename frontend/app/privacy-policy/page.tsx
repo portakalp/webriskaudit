@@ -5,7 +5,9 @@ import { openGraphDefaults, twitterDefaults } from "@/lib/metadata"
 
 const title = "Privacy | WebRiskAudit"
 const description =
-  "How WebRiskAudit handles data: no accounts, no cookies, no analytics and no database of scans. Scanned domains appear in the API's logs."
+  "How WebRiskAudit handles data: no accounts, no cookies, no analytics and no database of scans. Scanned domains appear in the API's logs for 14 days."
+
+const LINK = "text-orange-700 hover:text-orange-800 underline underline-offset-2 transition-colors"
 
 export const metadata: Metadata = {
   title: "Privacy",
@@ -71,48 +73,62 @@ export default function PrivacyPolicyPage() {
               WebRiskAudit in their user agent, so the scanned site sees the server&apos;s address, not yours.
             </p>
             <p className="text-slate-700 leading-relaxed mb-4">
-              The API keeps no database of scans. A finished report stays in the API&apos;s memory for up to 10
-              minutes, so repeated scans of the same domain are answered from that cache. For each scan
-              request, the API&apos;s application log records the domain, the outcome, the score, grade and
-              coverage, whether the report came from the cache, and how long the request took. IP addresses
-              are not logged. If a scan fails unexpectedly, the error is logged together with the domain. These
-              logs are stored by the API&apos;s hosting provider.
+              The API keeps no database of scans. A finished report is answered from the API&apos;s memory for
+              10 minutes, so repeated scans of the same domain use that cache, and dropped after that. For
+              each scan request, the API&apos;s application log records the domain, the outcome, the score, grade
+              and coverage, whether the report came from the cache, and how long the request waited and took.
+              IP addresses are not logged. If a scan fails unexpectedly, the error is logged together with the
+              domain. How long these logs are kept is described under Hosting.
             </p>
             <p className="text-slate-700 leading-relaxed mb-4">
               To limit abuse, the API counts recent scans in its memory per IPv4 address, or per IPv6 /64
               network (the block of addresses one connection usually gets): by default 10 scans per 10 minutes,
               and one at a time, for which the address or network is also kept while its scan runs. These counts
-              are never written to the logs or to disk and are dropped within about 20 minutes.
+              are never written to the logs or to disk. They are dropped with the first request the API handles
+              after the last counted scan is 10 minutes old (the hosting platform&apos;s health check alone sends
+              one every 30 seconds), or when the API restarts.
             </p>
 
             <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">Hosting</h2>
             <p className="text-slate-700 leading-relaxed mb-4">
-              The site is served through Cloudflare and the API runs on Render. Your browser connects to both
-              directly, so each of them processes your IP address and request metadata (such as the time,
-              requested URL and user agent) and keeps logs under its own privacy policy:{" "}
-              <a
-                href="https://www.cloudflare.com/privacypolicy/"
-                className="text-orange-700 hover:text-orange-800 underline underline-offset-2 transition-colors"
-              >
-                Cloudflare
+              The site and the API are both served through Cloudflare. Your browser connects only to
+              Cloudflare, which delivers the site&apos;s files itself and forwards scan requests to the API.
+              Cloudflare processes your IP address and request details (such as the time, the requested URL
+              and your browser&apos;s user agent) to deliver and protect both, including a limit on scan requests
+              per IP address, and keeps logs as described in its{" "}
+              <a href="https://www.cloudflare.com/privacypolicy/" className={LINK}>
+                privacy policy
               </a>
-              ,{" "}
-              <a
-                href="https://render.com/privacy"
-                className="text-orange-700 hover:text-orange-800 underline underline-offset-2 transition-colors"
-              >
-                Render
+              .
+            </p>
+            <p className="text-slate-700 leading-relaxed mb-4">
+              The API runs on Google Cloud Run in Google&apos;s europe-west1 region (Belgium), behind a Google
+              load balancer. The load balancer is global, so a request can enter Google&apos;s network outside the
+              EU. Cloudflare passes your IP address to the API in a request header, and the API uses it only in
+              memory, for the limits described above. The load balancer&apos;s request logs are switched off, and
+              Cloud Run&apos;s request logs, which would contain your IP address, are excluded and not stored. The
+              application logs described above are kept for 14 days in a log bucket in europe-west1. An
+              unexpected error, with the domain but without an IP address, can also be kept for up to 30 days by
+              Google Cloud&apos;s Error Reporting. Google processes this data as a processor under the{" "}
+              <a href="https://cloud.google.com/terms/data-processing-addendum" className={LINK}>
+                Cloud Data Processing Addendum
               </a>
-              . The API&apos;s application logs described above are stored by Render.
+              ; see also the{" "}
+              <a href="https://cloud.google.com/terms/cloud-privacy-notice" className={LINK}>
+                Google Cloud Privacy Notice
+              </a>
+              .
+            </p>
+            <p className="text-slate-700 leading-relaxed mb-4">
+              Cloudflare and Google are US companies, so your data may be processed outside the EU. Cloudflare,
+              Inc. and Google LLC are certified under the EU-U.S. Data Privacy Framework, and both companies
+              also rely on standard contractual clauses for such transfers.
             </p>
 
             <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">Source code</h2>
             <p className="text-slate-700 leading-relaxed mb-4">
               The code for the site and the API is public at{" "}
-              <a
-                href="https://github.com/portakalp/webriskaudit"
-                className="text-orange-700 hover:text-orange-800 underline underline-offset-2 transition-colors"
-              >
+              <a href="https://github.com/portakalp/webriskaudit" className={LINK}>
                 github.com/portakalp/webriskaudit
               </a>
               , so you can check what it does.
@@ -121,10 +137,7 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">Contact</h2>
             <p className="text-slate-700 leading-relaxed mb-4">
               For questions about this note, contact Taha Gökalp Bakar via{" "}
-              <a
-                href="https://github.com/portakalp"
-                className="text-orange-700 hover:text-orange-800 underline underline-offset-2 transition-colors"
-              >
+              <a href="https://github.com/portakalp" className={LINK}>
                 github.com/portakalp
               </a>
               . If this note changes, the date above is updated.
