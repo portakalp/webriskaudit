@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState } from "react"
 import { Globe, ArrowRight, Loader2, Lock, AlertCircle } from "lucide-react"
-import { isValidDomain, sanitizeInput, cleanDomain } from "@/lib/validation"
+import { isValidDomain, normalizeDomain } from "@/lib/validation"
 
 interface ScanFormProps {
   onSubmit: (domain: string) => void
@@ -19,24 +19,20 @@ export function ScanForm({ onSubmit, isLoading = false }: ScanFormProps) {
     e.preventDefault()
     setError(null)
 
-    // Sanitize input
-    const sanitizedWebsite = sanitizeInput(website)
+    // Accept pasted URLs: reduce the input to a hostname before validating
+    const domain = normalizeDomain(website)
 
-    // Validate empty field
-    if (!sanitizedWebsite) {
+    if (!domain) {
       setError("Please enter a domain")
       return
     }
 
-    // Validate domain format
-    if (!isValidDomain(sanitizedWebsite)) {
+    if (!isValidDomain(domain)) {
       setError("Please enter a valid domain (e.g., example.com)")
       return
     }
 
-    // Clean domain and call parent's onSubmit callback
-    const cleanedDomain = cleanDomain(sanitizedWebsite)
-    onSubmit(cleanedDomain)
+    onSubmit(domain)
   }
 
   return (
