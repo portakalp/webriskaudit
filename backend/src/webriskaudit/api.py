@@ -11,7 +11,9 @@ requests that did not pass through it, and the client address for the rate
 limits comes from the proxy's header (``CLIENT_IP_HEADER``). Without it, the
 client is the TCP peer; ``X-Forwarded-For`` is never read.
 
-Run with ``uvicorn webriskaudit.api:app``.
+Run with ``uvicorn webriskaudit.api:app --no-proxy-headers --ws none``: by
+default uvicorn trusts ``X-Forwarded-For`` from 127.0.0.1, and its WebSocket
+support logs the client address and path of every upgrade request.
 """
 
 import asyncio
@@ -32,7 +34,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.status import WS_1008_POLICY_VIOLATION
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from starlette.websockets import WebSocketClose
 
 from webriskaudit import __version__
 from webriskaudit.cache import ResultCache
@@ -441,7 +445,8 @@ class OriginAuth:
     forwards, so a request that reaches the API another way, such as straight
     to its load balancer, is refused before anything else reads it. Only
     ``OPEN_ROUTES`` are exempt. More than one secret allows a rotation; each
-    is compared in constant time.
+    is compared in constant time. No route takes a WebSocket, so every
+    WebSocket connection is closed here, secret or not.
     """
 
     def __init__(self, app: ASGIApp, secrets: Sequence[str]) -> None:
@@ -450,8 +455,11 @@ class OriginAuth:
         self._header = ORIGIN_AUTH_HEADER.lower().encode()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "websocket":
+            await WebSocketClose(code=WS_1008_POLICY_VIOLATION)(scope, receive, send)
+            return
         if (
-            scope["type"] != "http"
+            scope["type"] == "lifespan"
             or (scope["method"], scope["path"]) in OPEN_ROUTES
             or self._authenticated(scope)
         ):

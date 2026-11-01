@@ -808,6 +808,45 @@ async def test_every_route_but_health_and_root_needs_the_secret() -> None:
         problem(reply, 403, "forbidden")
 
 
+@pytest.mark.parametrize(
+    ("path", "headers"),
+    [
+        ("/anything", []),
+        ("/health", []),
+        (SCAN, [(b"x-origin-auth", SECRET.encode())]),
+    ],
+)
+async def test_websockets_are_closed_by_origin_auth(
+    path: str, headers: list[tuple[bytes, bytes]]
+) -> None:
+    app = create_app(settings=BEHIND_PROXY, scan=FakeScan())
+    scope = {
+        "type": "websocket",
+        "asgi": {"version": "3.0"},
+        "scheme": "ws",
+        "http_version": "1.1",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"token=raw",
+        "root_path": "",
+        "headers": [(b"host", b"testserver"), *headers],
+        "client": ("198.51.100.7", 50000),
+        "server": ("testserver", 80),
+        "subprotocols": [],
+    }
+    sent: list[Message] = []
+
+    async def receive() -> Message:
+        return {"type": "websocket.connect"}
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    await app(scope, receive, send)
+    # 1008 (policy violation), not the router's 1000 for a route that does not exist.
+    assert sent == [{"type": "websocket.close", "code": 1008, "reason": ""}]
+
+
 async def test_two_secrets_allow_a_rotation() -> None:
     settings = Settings(
         origin_auth_secrets=(SECRET, NEW_SECRET), client_ip_header="CF-Connecting-IP"

@@ -35,6 +35,11 @@ def test_image_runs_one_worker_without_trusting_forwarded_headers() -> None:
     assert "FORWARDED_ALLOW_IPS" not in DOCKERFILE.read_text(encoding="utf-8")
 
 
+def test_image_turns_websocket_support_off() -> None:
+    # uvicorn would log the address and path of each handshake; upgrades now reach OriginAuth.
+    assert start_options({})["ws"] == "none"
+
+
 def test_image_start_command_defaults() -> None:
     options = start_options({})
     assert options["port"] == 8000
