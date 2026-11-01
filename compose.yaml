@@ -1,0 +1,32 @@
+# Local stack: the site on http://localhost:3000 and the API on
+# http://localhost:8000. Start it with "docker compose up --build" (or
+# "make up") and stop it with "docker compose down".
+# Ports are bound to 127.0.0.1, so the stack is not reachable from the network.
+name: webriskaudit
+
+services:
+  api:
+    build: ./backend
+    environment:
+      ALLOWED_ORIGINS: http://localhost:3000
+    ports:
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "127.0.0.1:3000:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
