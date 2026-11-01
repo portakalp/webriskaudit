@@ -69,3 +69,10 @@ lerna-debug.log*
 # Local databases
 *.db
 *.sqlite3
+
+# Terraform (the lock file .terraform.lock.hcl is committed)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan

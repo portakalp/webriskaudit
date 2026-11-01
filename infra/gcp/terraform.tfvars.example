@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars (ignored by git) and fill in. See docs/DEPLOYMENT.md.
+project_id  = "webriskaudit-prod"
+alert_email = "you@example.com"
+
+# Defaults, shown for reference.
+# region               = "europe-west1"
+# api_hostname         = "api.webriskaudit.com"
+# site_hostname        = "webriskaudit.com"
+# github_repository_id = "1441833024" # gh api repos/portakalp/webriskaudit --jq .id
+# dns_resolvers        = ["1.1.1.1", "9.9.9.10"]
+
+# Switch on once the deploy jobs use the GitHub environment (public repository).
+# github_require_environment = true
+# github_environment         = "production"
