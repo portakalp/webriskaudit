@@ -1,0 +1,4 @@
+# DKIM public keys used as DNS fixtures in the email check tests. DKIM keys
+# are published in DNS by design, so they are not secrets.
+backend/tests/test_email.py:generic-api-key:32
+backend/tests/test_email.py:generic-api-key:33
