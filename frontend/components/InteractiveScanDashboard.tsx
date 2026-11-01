@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { CheckCircle, Shield, Activity } from "lucide-react"
+import { CheckCircle } from "lucide-react"
 import { NetworkGraph } from "./scan-dashboard/NetworkGraph"
 import { MetricCard } from "./scan-dashboard/MetricCard"
 import { ScanPhaseIndicator } from "./scan-dashboard/ScanPhaseIndicator"
@@ -11,50 +11,41 @@ interface InteractiveScanDashboardProps {
   onComplete?: () => void
 }
 
-// Define scan phases with timing and metrics
+// Timed phases for the animation only; they do not track the real scan
 const SCAN_PHASES: ScanPhase[] = [
   {
     name: "Network Discovery",
     tests: ["dns", "spf"],
     duration: 6000,
-    metrics: { dataPoints: 250, scoreAdd: 10 },
   },
   {
     name: "Security Analysis",
     tests: ["ssl", "dmarc", "waf"],
     duration: 6000,
-    metrics: { dataPoints: 450, scoreAdd: 25 },
   },
   {
     name: "Defense Scanning",
     tests: ["headers", "blacklist"],
     duration: 6000,
-    metrics: { dataPoints: 350, scoreAdd: 20 },
   },
   {
-    name: "Privacy Tech",
-    tests: ["compliance", "typo"],
+    name: "Privacy",
+    tests: ["compliance"],
     duration: 4500,
-    metrics: { dataPoints: 200, scoreAdd: 15 },
   },
   {
     name: "Score Calculation",
     tests: ["score"],
     duration: 1500,
-    metrics: { dataPoints: 0, scoreAdd: 30 },
   },
 ]
+
+const TOTAL_TESTS = SCAN_PHASES.reduce((sum, phase) => sum + phase.tests.length, 0)
 
 const initialState: DashboardState = {
   currentPhaseIndex: 0,
   completedTests: [],
   activeTests: [],
-  metrics: {
-    testsCompleted: 0,
-    score: 0,
-    dataPoints: 0,
-  },
-  elapsedTime: 0,
 }
 
 export function InteractiveScanDashboard({ onComplete }: InteractiveScanDashboardProps) {
@@ -89,16 +80,11 @@ export function InteractiveScanDashboard({ onComplete }: InteractiveScanDashboar
       }))
 
       const timer = setTimeout(() => {
-        // Mark tests as complete and update metrics
+        // Mark tests as complete
         setState((prev) => ({
           ...prev,
           completedTests: [...prev.completedTests, ...phase.tests],
           activeTests: [],
-          metrics: {
-            testsCompleted: prev.metrics.testsCompleted + phase.tests.length,
-            score: prev.metrics.score + phase.metrics.scoreAdd,
-            dataPoints: prev.metrics.dataPoints + phase.metrics.dataPoints,
-          },
         }))
 
         elapsedTime += phase.duration
@@ -160,21 +146,8 @@ export function InteractiveScanDashboard({ onComplete }: InteractiveScanDashboar
         <div className="space-y-4 order-1 md:order-2">
           <MetricCard
             label="Tests Completed"
-            value={`${state.metrics.testsCompleted}/10`}
+            value={`${state.completedTests.length}/${TOTAL_TESTS}`}
             icon={CheckCircle}
-          />
-          <MetricCard
-            label="Security Score"
-            value={state.metrics.score}
-            maxValue={100}
-            icon={Shield}
-            animated
-          />
-          <MetricCard
-            label="Data Points"
-            value={state.metrics.dataPoints}
-            icon={Activity}
-            animated
           />
         </div>
       </div>
