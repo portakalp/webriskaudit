@@ -28,22 +28,22 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="max-w-4xl mx-auto px-6 py-12">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <main className="max-w-4xl mx-auto px-4 py-12 sm:px-6">
         {/* Back to Home Link */}
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 transition-colors mb-6"
+          className="inline-flex items-center gap-2 rounded text-sm text-slate-700 hover:text-slate-900 transition-colors mb-6"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-4 h-4" aria-hidden="true" />
           Back to Home
         </Link>
 
-        <div className="bg-white rounded-xl shadow-lg p-8 md:p-12">
+        <div className="bg-white rounded-xl shadow-lg p-6 sm:p-8 md:p-12">
           <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
             Privacy
           </h1>
-          <p className="text-sm text-slate-500 mb-8">
+          <p className="text-sm text-slate-600 mb-8">
             Last updated: 1 November 2026
           </p>
 
@@ -63,16 +63,26 @@ export default function PrivacyPolicyPage() {
 
             <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">When you run a scan</h2>
             <p className="text-slate-700 leading-relaxed mb-4">
-              The domain you enter is sent from your browser to the WebRiskAudit API. The API performs
-              passive checks against that domain (DNS lookups, a TLS certificate check and HTTP requests for
-              the home page and for up to about 50 common privacy-policy paths) and returns the result to your
-              browser. The checks are made from the API server, so the scanned site sees the server&apos;s
-              address, not yours.
+              The domain you enter is sent from your browser to the WebRiskAudit API, which checks it with
+              passive requests only: DNS lookups (the domain&apos;s addresses and its SPF, DMARC and DKIM
+              records), one TLS handshake on port 443 to read the certificate, and HTTP GET requests for the
+              http:// and https:// home page, following up to 5 redirects. Nothing else is requested: no link
+              crawling, port scanning or login attempts. The requests are made from the API server and name
+              WebRiskAudit in their user agent, so the scanned site sees the server&apos;s address, not yours.
             </p>
             <p className="text-slate-700 leading-relaxed mb-4">
-              The API keeps no database of scans or results. Its application logs do record each scanned
-              domain and the URLs requested while checking it, and these logs are stored by the API&apos;s
-              hosting provider.
+              The API keeps no database of scans. A finished report stays in the API&apos;s memory for up to 10
+              minutes, so repeated scans of the same domain are answered from that cache. For each scan
+              request, the API&apos;s application log records the domain, the outcome, the score, grade and
+              coverage, whether the report came from the cache, and how long the request took. IP addresses
+              are not logged. If a scan fails unexpectedly, the error is logged together with the domain. These
+              logs are stored by the API&apos;s hosting provider.
+            </p>
+            <p className="text-slate-700 leading-relaxed mb-4">
+              To limit abuse, the API counts recent scans in its memory per IPv4 address, or per IPv6 /64
+              network (the block of addresses one connection usually gets): by default 10 scans per 10 minutes,
+              and one at a time, for which the address or network is also kept while its scan runs. These counts
+              are never written to the logs or to disk and are dropped within about 20 minutes.
             </p>
 
             <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">Hosting</h2>
@@ -82,14 +92,14 @@ export default function PrivacyPolicyPage() {
               requested URL and user agent) and keeps logs under its own privacy policy:{" "}
               <a
                 href="https://www.cloudflare.com/privacypolicy/"
-                className="text-orange-600 hover:text-orange-700 underline transition-colors"
+                className="text-orange-700 hover:text-orange-800 underline underline-offset-2 transition-colors"
               >
                 Cloudflare
               </a>
               ,{" "}
               <a
                 href="https://render.com/privacy"
-                className="text-orange-600 hover:text-orange-700 underline transition-colors"
+                className="text-orange-700 hover:text-orange-800 underline underline-offset-2 transition-colors"
               >
                 Render
               </a>
@@ -101,7 +111,7 @@ export default function PrivacyPolicyPage() {
               The code for the site and the API is public at{" "}
               <a
                 href="https://github.com/portakalp/webriskaudit"
-                className="text-orange-600 hover:text-orange-700 underline transition-colors"
+                className="text-orange-700 hover:text-orange-800 underline underline-offset-2 transition-colors"
               >
                 github.com/portakalp/webriskaudit
               </a>
@@ -113,7 +123,7 @@ export default function PrivacyPolicyPage() {
               For questions about this note, contact Taha Gökalp Bakar via{" "}
               <a
                 href="https://github.com/portakalp"
-                className="text-orange-600 hover:text-orange-700 underline transition-colors"
+                className="text-orange-700 hover:text-orange-800 underline underline-offset-2 transition-colors"
               >
                 github.com/portakalp
               </a>
@@ -121,7 +131,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   )
 }

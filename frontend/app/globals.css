@@ -123,53 +123,19 @@
   body {
     @apply bg-background text-foreground;
   }
-}
-
-/* Added border beam animation keyframes */
-@keyframes borderBeam {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
+  /* A visible keyboard focus ring everywhere (orange-700: 5.2:1 on white) */
+  :focus-visible {
+    outline: 2px solid var(--color-orange-700);
+    outline-offset: 2px;
   }
 }
 
-/* Interactive dashboard scanning animations */
-@keyframes pulse-glow {
-  0%, 100% {
-    filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.6));
-    transform: scale(1);
-  }
-  50% {
-    filter: drop-shadow(0 0 16px rgba(249, 115, 22, 0.9));
-    transform: scale(1.1);
-  }
-}
-
-@keyframes line-flow {
-  0% {
-    stroke-dashoffset: 10;
-  }
-  100% {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes rotate-slow {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Reduced motion support for scanning animations */
 @media (prefers-reduced-motion: reduce) {
-  .scanning-node,
-  .active-connection,
-  .center-domain {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
