@@ -114,7 +114,7 @@ jobs:
           uvx pip-audit --no-deps --disable-pip -r "$RUNNER_TEMP/backend-requirements.txt"
 
   terraform:
-    name: Terraform (format, validate)
+    name: Terraform (format, validate, test)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -130,6 +130,8 @@ jobs:
       # checked against the committed lock file.
       - run: terraform init -backend=false -input=false -lockfile=readonly
       - run: terraform validate
+      # Plans against a mocked provider (tests/*.tftest.hcl); no credentials.
+      - run: terraform test
 
   secrets:
     name: Secret scan
