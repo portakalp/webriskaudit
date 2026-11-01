@@ -94,19 +94,19 @@ export function MiniReport({
         </div>
       </div>
 
-      {/* Critical Findings - Full Width */}
+      {/* Findings - Full Width */}
       {(!wafStatus || !dmarcStatus || !sslStatus || securityHeadersScore < 4) && (
         <div className="space-y-2 p-4 bg-red-50 border-2 border-red-200 rounded-xl">
           <h4 className="text-sm font-semibold text-red-900 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" />
-            Critical Findings
+            Findings to Review
           </h4>
           <div className="space-y-1">
-            {!wafStatus && <p className="text-xs text-red-700">⚠ WAF Not Detected</p>}
-            {!dmarcStatus && <p className="text-xs text-red-700">⚠ DMARC Not Configured</p>}
-            {!sslStatus && <p className="text-xs text-red-700">⚠ SSL Certificate Issue</p>}
+            {!wafStatus && <p className="text-xs text-red-700">No CDN or WAF detected</p>}
+            {!dmarcStatus && <p className="text-xs text-red-700">No DMARC record found</p>}
+            {!sslStatus && <p className="text-xs text-red-700">TLS certificate invalid or expiring within 30 days</p>}
             {securityHeadersScore < 4 && (
-              <p className="text-xs text-red-700">⚠ {5 - securityHeadersScore} Security Headers Missing</p>
+              <p className="text-xs text-red-700">{5 - securityHeadersScore} of 5 security headers missing</p>
             )}
           </div>
         </div>
@@ -148,7 +148,7 @@ export function MiniReport({
                 ) : (
                   <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
                 )}
-                <span className="text-sm text-slate-700">DKIM Signature</span>
+                <span className="text-sm text-slate-700">DKIM Record (Common Selectors)</span>
               </div>
 
               {/* DMARC Policy */}
@@ -158,7 +158,7 @@ export function MiniReport({
                 ) : (
                   <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
                 )}
-                <span className="text-sm text-slate-700">DMARC Policy (Anti-Spoofing)</span>
+                <span className="text-sm text-slate-700">DMARC Record</span>
               </div>
 
               {/* Blacklist Status */}
@@ -168,7 +168,7 @@ export function MiniReport({
                 ) : (
                   <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
                 )}
-                <span className="text-sm text-slate-700">Domain Blacklist Status</span>
+                <span className="text-sm text-slate-700">Not on DNS Blocklists</span>
               </div>
             </div>
           </div>
@@ -198,7 +198,7 @@ export function MiniReport({
                 ) : (
                   <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
                 )}
-                <span className="text-sm text-slate-700">Active Firewall (WAF)</span>
+                <span className="text-sm text-slate-700">CDN / WAF Detected</span>
               </div>
 
               {/* SSL Encryption */}
@@ -208,7 +208,7 @@ export function MiniReport({
                 ) : (
                   <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
                 )}
-                <span className="text-sm text-slate-700">SSL Encryption Strength</span>
+                <span className="text-sm text-slate-700">Valid TLS Certificate</span>
               </div>
 
               {/* Server Identity */}
@@ -218,7 +218,7 @@ export function MiniReport({
                 ) : (
                   <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
                 )}
-                <span className="text-sm text-slate-700">Server Identity Masking</span>
+                <span className="text-sm text-slate-700">Server Header Hides Software</span>
               </div>
 
               {/* Security Headers */}
@@ -238,10 +238,10 @@ export function MiniReport({
           </div>
         </div>
 
-        {/* COLUMN 3: Privacy Tech */}
+        {/* COLUMN 3: Privacy */}
         <div className="space-y-4">
           <CategoryScoreCard
-            title="Privacy Tech"
+            title="Privacy"
             icon={FileCheck}
             score={compliance.score}
             max={compliance.max}
@@ -251,7 +251,7 @@ export function MiniReport({
 
           <div className="border-2 border-purple-200 rounded-xl p-5 bg-white">
             <div className="flex items-center gap-2 mb-4">
-              <h3 className="text-lg font-bold text-slate-900">Technical Privacy Checks</h3>
+              <h3 className="text-lg font-bold text-slate-900">Privacy Checks</h3>
             </div>
 
             <div className="space-y-2.5">
@@ -269,7 +269,12 @@ export function MiniReport({
         </div>
       </div>
 
-      <div className="pt-4">
+      <p className="text-xs text-slate-500 text-center text-pretty">
+        These results come from automated, heuristic checks and can be incomplete or wrong. They are not a
+        substitute for a professional security assessment.
+      </p>
+
+      <div>
         <button
           onClick={onReset}
           className="w-full py-3 px-6 bg-white border-2 border-slate-200 text-slate-700 font-semibold text-sm rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors flex items-center justify-center gap-2"

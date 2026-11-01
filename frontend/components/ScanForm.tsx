@@ -50,7 +50,7 @@ export function ScanForm({ onSubmit, isLoading = false }: ScanFormProps) {
       )}
 
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-slate-700 pl-1">Website URL</label>
+        <label htmlFor="scan-domain" className="text-xs font-medium text-slate-700 pl-1">Domain</label>
         <div className="relative group">
           <Globe
             className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
@@ -58,8 +58,9 @@ export function ScanForm({ onSubmit, isLoading = false }: ScanFormProps) {
             }`}
           />
           <input
+            id="scan-domain"
             type="text"
-            placeholder="yourdomain.com"
+            placeholder="example.com"
             value={website}
             onChange={(e) => setWebsite(e.target.value)}
             onFocus={() => setFocusedField("website")}
@@ -85,7 +86,7 @@ export function ScanForm({ onSubmit, isLoading = false }: ScanFormProps) {
         ) : (
           <>
             <span className="flex items-center gap-2">
-              <span>Get My Free Risk Score</span>
+              <span>Check Domain</span>
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
             </span>
           </>
