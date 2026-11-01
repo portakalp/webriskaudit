@@ -25,11 +25,32 @@ def start_options(env: dict[str, str]) -> dict[str, Any]:
         return dict(context.params)
 
 
-def test_image_runs_the_api_without_trusting_forwarded_headers() -> None:
+def test_image_runs_one_worker_without_trusting_forwarded_headers() -> None:
     options = start_options({})
     assert options["app"] == "webriskaudit.api:app"
     assert options["host"] == "0.0.0.0"  # noqa: S104 (a container listens on every interface)
+    assert options["workers"] == 1
     assert options["proxy_headers"] is False
     assert options["forwarded_allow_ips"] is None
-    assert options["workers"] is None
     assert "FORWARDED_ALLOW_IPS" not in DOCKERFILE.read_text(encoding="utf-8")
+
+
+def test_image_start_command_defaults() -> None:
+    options = start_options({})
+    assert options["port"] == 8000
+    assert options["access_log"] is False
+    assert options["timeout_graceful_shutdown"] == 8
+
+
+def test_image_start_command_reads_the_platform_port() -> None:
+    options = start_options({"PORT": "8080", "GRACEFUL_SHUTDOWN_SECONDS": "5"})
+    assert (options["port"], options["timeout_graceful_shutdown"]) == (8080, 5)
+
+
+def test_image_records_its_revision() -> None:
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    runtime = text[text.index("AS runtime") :]
+    assert 'ARG REVISION=""' in runtime
+    assert 'ENV WEBRISKAUDIT_REVISION="${REVISION}"' in runtime
+    assert 'org.opencontainers.image.revision="${REVISION}"' in runtime
+    assert 'org.opencontainers.image.source="https://github.com/portakalp/webriskaudit"' in runtime

@@ -232,10 +232,18 @@ export interface components {
         };
         /** ServiceInfo */
         ServiceInfo: {
-            /** Docs */
-            docs: string;
+            /**
+             * Docs
+             * @description Path of the interactive API documentation; null when it is switched off.
+             */
+            docs: string | null;
             /** Name */
             name: string;
+            /**
+             * Revision
+             * @description Commit the running image was built from; null when unknown (a local run).
+             */
+            revision: string | null;
             /** Version */
             version: string;
         };

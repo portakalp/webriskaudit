@@ -52,6 +52,10 @@ class ResultCache[T]:
         task.add_done_callback(partial(self._finished, key))
         return task
 
+    def sweep(self) -> None:
+        """Drop expired results. Cheap enough for every request."""
+        self._sweep(self._clock())
+
     def __len__(self) -> int:
         """Number of cached results, including expired ones not yet dropped."""
         return len(self._done)
@@ -64,10 +68,17 @@ class ResultCache[T]:
             return
         self._store(key, task.result())
 
+    def _sweep(self, now: float) -> None:
+        # Every entry lives for the same ttl, so the expired ones come first.
+        while self._done:
+            key = next(iter(self._done))
+            if self._done[key][0] > now:
+                return
+            del self._done[key]
+
     def _store(self, key: str, result: T) -> None:
         now = self._clock()
-        for stale in [k for k, (expires, _) in self._done.items() if expires <= now]:
-            del self._done[stale]
+        self._sweep(now)
         self._done.pop(key, None)
         while len(self._done) >= self._max_entries:
             del self._done[next(iter(self._done))]

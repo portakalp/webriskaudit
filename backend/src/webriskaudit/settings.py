@@ -13,6 +13,8 @@ _HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 """An HTTP field name (RFC 9110 token)."""
 _SECRET = re.compile(r"[\x21-\x7e]+")
 """Visible ASCII: a header value without spaces that no proxy will rewrite."""
+_TRUE = frozenset({"1", "true", "yes", "on"})
+_FALSE = frozenset({"0", "false", "no", "off"})
 
 
 class SettingsError(ValueError):
@@ -57,6 +59,10 @@ class Settings:
     client_ip_header: str | None = None
     """Header the proxy puts the client address in (CLIENT_IP_HEADER), such as
     CF-Connecting-IP. Required with, and only allowed with, origin authentication."""
+    api_docs_enabled: bool = True
+    """Serve /docs, /redoc and /openapi.json (API_DOCS_ENABLED)."""
+    revision: str | None = None
+    """Commit the running image was built from (WEBRISKAUDIT_REVISION, set by the image build)."""
 
     def __post_init__(self) -> None:
         for number, secret in enumerate(self.origin_auth_secrets, start=1):
@@ -82,6 +88,27 @@ class Settings:
     def origin_auth_enabled(self) -> bool:
         return bool(self.origin_auth_secrets)
 
+    def summary(self) -> dict[str, object]:
+        """The effective settings without secrets, for the startup log line."""
+        return {
+            "revision": self.revision,
+            "allowed_origins": list(self.allowed_origins),
+            "rate_limit_scans": self.rate_limit_scans,
+            "rate_limit_window_seconds": self.rate_limit_window,
+            "global_rate_limit_scans": self.global_rate_limit_scans,
+            "cache_ttl_seconds": self.cache_ttl,
+            "max_concurrent_scans": self.max_concurrent_scans,
+            "max_queued_scans": self.max_queued_scans,
+            "queue_timeout_seconds": self.queue_timeout,
+            "scan_deadline_seconds": self.scan_deadline,
+            "check_timeout_seconds": self.check_timeout,
+            "dns_nameservers": list(self.dns_nameservers) or "system",
+            "origin_auth": "enabled" if self.origin_auth_enabled else "disabled",
+            "origin_auth_secrets": len(self.origin_auth_secrets),
+            "client_ip_header": self.client_ip_header,
+            "api_docs": "enabled" if self.api_docs_enabled else "disabled",
+        }
+
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
         """Settings from ``env`` (default: the process environment). Raises SettingsError."""
@@ -103,6 +130,8 @@ class Settings:
             dns_nameservers=parse_nameservers(env.get("DNS_NAMESERVERS", "")),
             origin_auth_secrets=_split(env.get("ORIGIN_AUTH_SECRETS", "")),
             client_ip_header=env.get("CLIENT_IP_HEADER", "").strip() or None,
+            api_docs_enabled=_read_bool(env, "API_DOCS_ENABLED", True),
+            revision=env.get("WEBRISKAUDIT_REVISION", "").strip() or None,
         )
 
 
@@ -125,6 +154,18 @@ def parse_nameservers(value: str) -> tuple[str, ...]:
 def _split(value: str) -> tuple[str, ...]:
     """Comma-separated values, trimmed, without empty entries."""
     return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def _read_bool(env: Mapping[str, str], name: str, default: bool) -> bool:
+    raw = env.get(name)
+    if raw is None or not raw.strip():
+        return default
+    value = raw.strip().lower()
+    if value in _TRUE:
+        return True
+    if value in _FALSE:
+        return False
+    raise SettingsError(f"{name} must be true or false, got {raw!r}")
 
 
 def _read[T: (int, float)](
