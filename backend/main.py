@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Web Risk Audit API",
+    title="WebRiskAudit API",
     description="API for performing passive security audits on domains.",
     version="2.1.0"
 )
@@ -166,7 +166,11 @@ def map_audit_results(domain: str, raw_report: dict) -> dict:
 
 @app.get("/")
 def root():
-    return {"message": "Web Risk Audit API is running"}
+    return {"name": "WebRiskAudit API", "docs": "/docs"}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 @app.post("/api/scan", response_model=ScanResponse)
 def scan_domain(request: ScanRequest):
