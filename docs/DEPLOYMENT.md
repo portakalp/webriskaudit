@@ -9,6 +9,9 @@ does them by hand, in the order given. Points marked **Unverified** come
 from documentation or reasoning but have not been tested on this setup yet;
 check them during the first deploy and update this file.
 
+Run every command from the repository root. Terraform commands use
+`-chdir=infra/gcp`, so no step changes directory.
+
 Status: not live yet. Cutover date: _(fill in)_.
 
 ## Architecture
@@ -144,16 +147,15 @@ secret's value never goes through Terraform).
 ### 4. Terraform
 
 ```bash
-cd infra/gcp
-cp terraform.tfvars.example terraform.tfvars    # set project_id and alert_email
-terraform init -backend-config="bucket=PROJECT_ID-tfstate"
+cp infra/gcp/terraform.tfvars.example infra/gcp/terraform.tfvars   # set project_id and alert_email
+terraform -chdir=infra/gcp init -backend-config="bucket=PROJECT_ID-tfstate"
 
 # Enable the APIs first; resources created right after an API is switched on
 # sometimes fail. If a later apply still fails that way, run it again.
-terraform apply -target=google_project_service.enabled
-terraform plan       # about 40 more resources, all in this project
-terraform apply
-terraform output
+terraform -chdir=infra/gcp apply -target=google_project_service.enabled
+terraform -chdir=infra/gcp plan     # about 40 more resources, all in this project
+terraform -chdir=infra/gcp apply
+terraform -chdir=infra/gcp output
 ```
 
 Note `lb_ip`, `nat_ip`, `wif_provider`, `deployer_sa` and
@@ -203,9 +205,9 @@ a. **Inventory, no changes yet.** Note the SSL/TLS mode and HSTS
    environment variables (if the old HIBP key is there, revoke it at HIBP).
 
 b. **DNS authorization record.** DNS → Add record, from
-   `terraform output dns_authorization_record`: type `CNAME`, name
-   `_acme-challenge.api` (Cloudflare adds the zone), target the `data`
-   value, Proxy status **DNS only**.
+   `terraform -chdir=infra/gcp output dns_authorization_record`: type
+   `CNAME`, name `_acme-challenge.api` (Cloudflare adds the zone), target
+   the `data` value, Proxy status **DNS only**.
 
 c. **Wait for the certificate** (minutes to hours):
    ```bash
@@ -293,8 +295,8 @@ added there, and applied, before it can authenticate.
 
 Once the deploy jobs run in the `production` environment, also require it
 in Workload Identity Federation: set `github_require_environment = true` in
-`terraform.tfvars` and `terraform apply`. Tokens from jobs outside that
-environment are then refused.
+`infra/gcp/terraform.tfvars` and run `terraform -chdir=infra/gcp apply`.
+Tokens from jobs outside that environment are then refused.
 
 ## First deploy and verification
 
