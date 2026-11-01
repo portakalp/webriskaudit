@@ -1,6 +1,6 @@
 "use client"
 
-import { CheckCircle, XCircle, Globe, Lock, Mail, ShieldCheck, Shield, FileCheck, AlertTriangle, FileText, Search, Calculator } from "lucide-react"
+import { CheckCircle, XCircle, Globe, Lock, Mail, ShieldCheck, Shield, FileCheck, AlertTriangle, FileText, Calculator } from "lucide-react"
 import type { GraphNode, NodeStatus } from "./types"
 
 interface NetworkGraphProps {
@@ -17,8 +17,7 @@ const SECURITY_TESTS = [
   { id: "waf", name: "WAF", Icon: Shield },
   { id: "headers", name: "Headers", Icon: FileCheck },
   { id: "blacklist", name: "Blacklist", Icon: AlertTriangle },
-  { id: "compliance", name: "Privacy Tech", Icon: FileText },
-  { id: "typo", name: "Typo", Icon: Search },
+  { id: "compliance", name: "Privacy", Icon: FileText },
   { id: "score", name: "Score", Icon: Calculator },
 ]
 
@@ -48,7 +47,7 @@ export function NetworkGraph({ completedTests, activeTests }: NetworkGraphProps)
   const nodes: GraphNode[] = SECURITY_TESTS.map((test, index) => {
     const isInnerRing = index < 5
     const ringIndex = isInnerRing ? index : index - 5
-    const ringTotal = isInnerRing ? 5 : 4
+    const ringTotal = isInnerRing ? 5 : SECURITY_TESTS.length - 5
     const radius = isInnerRing ? innerRadius : outerRadius
     const position = getNodePosition(ringIndex, ringTotal, radius)
 
@@ -172,8 +171,7 @@ export function NetworkGraph({ completedTests, activeTests }: NetworkGraphProps)
         </text>
 
         {/* Security test nodes */}
-        {nodes.map((node, index) => {
-          const TestIcon = SECURITY_TESTS[index].Icon
+        {nodes.map((node) => {
           const nodeColor = getNodeColor(node.status)
           const isScanning = node.status === "scanning"
           const isComplete = node.status === "complete"
