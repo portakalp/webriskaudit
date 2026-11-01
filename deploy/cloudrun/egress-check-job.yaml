@@ -1,0 +1,44 @@
+# One-off Cloud Run job that proves the egress firewall from inside the VPC:
+# same subnet, network tag and service account as the API. It runs
+# deploy/checks/egress_check.py with the API image's Python; see
+# docs/DEPLOYMENT.md ("Egress firewall proof") for how to fill in the
+# placeholders, run it and delete it afterwards.
+#
+# Placeholders: __PROJECT__ (project ID), __IMAGE__ (the API image the service
+# runs), __NAT_IP__ (terraform output nat_ip), __SCRIPT_B64__ (the script,
+# base64 on one line; a job has no other way to receive a file).
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: webriskaudit-egress-check
+  labels:
+    cloud.googleapis.com/location: europe-west1
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/network-interfaces: '[{"network":"webriskaudit","subnetwork":"webriskaudit-euw1","tags":"webriskaudit-api"}]'
+        run.googleapis.com/vpc-access-egress: all-traffic
+    spec:
+      taskCount: 1
+      parallelism: 1
+      template:
+        spec:
+          maxRetries: 0
+          timeoutSeconds: 300
+          serviceAccountName: api-runtime@__PROJECT__.iam.gserviceaccount.com
+          containers:
+            - image: __IMAGE__
+              command:
+                - python
+                - -c
+                - import base64, os; exec(compile(base64.b64decode(os.environ["EGRESS_CHECK_SCRIPT"]), "egress_check.py", "exec"))
+              env:
+                - name: EGRESS_CHECK_SCRIPT
+                  value: __SCRIPT_B64__
+                - name: EXPECTED_EGRESS_IP
+                  value: __NAT_IP__
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
