@@ -403,11 +403,18 @@ bucket.
    blocked; webriskaudit.com on 80 and 443 allowed and on 8443 blocked
    (Cloudflare listens there, so this proves the final deny rule); no IPv6
    connection (`ipv6`, to `1.1.1.1`'s IPv6 address on 443); the private
-   addresses blocked; the metadata server either blocked or
+   addresses unreachable (`private`); the metadata server either blocked or
    refusing a request without `Metadata-Flavor`; the egress address equal
    to `nat_ip`. Record the metadata result in the threat model: if it is
    reachable, a request with the header gets a token for `api-runtime`,
    which has no roles beyond reading the origin secret.
+
+   The `private` lines do not prove the priority-900 deny rule: nothing in
+   the VPC uses those addresses and the default internet gateway does not
+   deliver to them, so they would be dropped without the rule too, and VPC
+   firewall rules logging, which could show the rule matching, is not
+   available for Direct VPC egress. That the rule exists as written is
+   shown by step 8 (no drift) and by `terraform test` in CI.
 10. **API alert.** Monitoring → Uptime checks → `WebRiskAudit API /health`
     passes from all three locations (it needs `{"status":"ok"}`, which the
     placeholder does not serve). Then set `api_alert_enabled = true` in

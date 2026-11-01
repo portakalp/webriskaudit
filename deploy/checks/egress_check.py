@@ -8,7 +8,12 @@ the same network tag and service account as the API. Expected:
 - blocked: DNS to a resolver that is not on the allow-list (8.8.8.8), another
   port on webriskaudit.com (8443, where Cloudflare listens), any IPv6
   connection (the subnet is IPv4-only and the firewall rules cover IPv4
-  only), private ranges;
+  only);
+- unreachable: private addresses. This does not test the priority-900 deny
+  rule: nothing in the VPC uses them and the default internet gateway does
+  not deliver to them, so they are dropped without that rule too, and VPC
+  firewall rules logging, which could show the rule matching, is not
+  available for Direct VPC egress;
 - the metadata server must not answer a request without Metadata-Flavor.
 
 It contacts only webriskaudit.com, the two allowed resolvers (1.1.1.1 also
@@ -253,7 +258,8 @@ def checks(site_address: str | None) -> list[Result]:
     results.append(run("ipv6", f"[{IPV6_TARGET}]:443", "blocked", ipv6_probe))
 
     for address in PRIVATE_TARGETS:
-        results.append(run("tcp", f"{address}:80", "blocked", partial(tcp_connect, address, 80)))
+        probe = partial(tcp_connect, address, 80)
+        results.append(run("private", f"{address}:80", "blocked", probe))
     return results
 
 
