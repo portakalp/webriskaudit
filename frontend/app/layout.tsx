@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google"
+import { openGraphDefaults, twitterDefaults } from "@/lib/metadata"
 import "./globals.css"
 
 const plusJakartaSans = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-plus-jakarta-sans" })
@@ -33,28 +34,17 @@ export const metadata: Metadata = {
     telephone: false,
   },
   openGraph: {
+    ...openGraphDefaults,
     title: "WebRiskAudit | Open-source passive security scanner",
     description:
       "A passive security posture check for a domain: email authentication, TLS certificate, HTTP security headers and a few other public signals.",
     url: "https://webriskaudit.com",
-    siteName: "WebRiskAudit",
-    locale: "en_US",
-    type: "website",
-    images: [
-      {
-        url: "/icon.png",
-        width: 512,
-        height: 512,
-        alt: "WebRiskAudit logo",
-      },
-    ],
   },
   twitter: {
-    card: "summary",
+    ...twitterDefaults,
     title: "WebRiskAudit | Open-source passive security scanner",
     description:
       "A passive security posture check for a domain. Automated, heuristic results from DNS lookups, a TLS certificate check and HTTP requests for the home page and common privacy-policy paths.",
-    images: ["/icon.png"],
   },
   alternates: {
     canonical: "/",
