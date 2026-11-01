@@ -46,11 +46,13 @@ only if the API knows the request came through our zone.
   Header, *Set static*) adds `X-Origin-Auth: <secret>` to every request for
   `api.webriskaudit.com`. The API reads the accepted values from
   `ORIGIN_AUTH_SECRETS` (comma-separated, each at least 32 visible ASCII
-  characters). A pure ASGI middleware, the outermost one, compares the
-  header with every secret using `hmac.compare_digest` and answers 403
-  (`forbidden` problem details) unless exactly one header matches one of
-  them. Only `GET /health` (the platform's probes reach the container
-  directly) and `GET /` (service information) are exempt.
+  characters). A pure ASGI middleware, outermost apart from the sweep of
+  expired rate limit entries and cached reports (which reads nothing from
+  the request), compares the header with every secret using
+  `hmac.compare_digest` and answers 403 (`forbidden` problem details)
+  unless exactly one header matches one of them. Only `GET /health` (the
+  platform's probes reach the container directly) and `GET /` (service
+  information) are exempt.
 - **Client address.** With origin authentication on, the client is the
   value of `CLIENT_IP_HEADER` (`CF-Connecting-IP`). It must be one header
   holding one IP address (checked with `ipaddress`); otherwise a scan
@@ -62,6 +64,10 @@ only if the API knows the request came through our zone.
   is the TCP peer, as before.
 - uvicorn runs with `--no-proxy-headers`, and nothing reads
   `X-Forwarded-For`. `FORWARDED_ALLOW_IPS` is gone from the image.
+- uvicorn also runs with `--ws none`, so an upgrade request is plain HTTP
+  and gets the same 403. With WebSocket support on, uvicorn logs the client
+  address and raw path of every handshake, even a refused one. The
+  middleware also closes any WebSocket connection, since no route takes one.
 - **Rotation.** Two secrets can be accepted at once: deploy `old,new`, switch
   the Cloudflare rule to `new`, then deploy `new` alone.
 - The scan log line records `client_ip_source` (`header` or `peer`), never
