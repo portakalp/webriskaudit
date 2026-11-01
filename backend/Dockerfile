@@ -4,8 +4,9 @@
 #   docker build -t webriskaudit-api --build-arg REVISION="$(git rev-parse HEAD)" backend
 #   docker run --rm -p 8000:8000 webriskaudit-api
 # Settings are environment variables, listed in .env.example. The start command
-# also reads PORT (default 8000) and GRACEFUL_SHUTDOWN_SECONDS (default 8). Base
-# images are pinned by tag and digest; update both together.
+# also reads PORT (default 8000; the healthcheck calls the same port) and
+# GRACEFUL_SHUTDOWN_SECONDS (default 8). Base images are pinned by tag and
+# digest; update both together.
 
 FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
@@ -55,7 +56,7 @@ USER 10001:10001
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --start-interval=1s --retries=3 \
-    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT', '8000'), timeout=4)"]
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % (os.environ.get('PORT') or '8000'), timeout=4)"]
 
 # The commit the image is built from, shown by GET / as "revision". Last, so a
 # new commit does not invalidate the layers above.

@@ -1,11 +1,13 @@
-"""The API image's start command, parsed the way uvicorn parses it."""
+"""The API image's start command and healthcheck, read from the Dockerfile."""
 
 import json
 import re
 import shlex
+import urllib.request
 from pathlib import Path
 from typing import Any
 
+import pytest
 from uvicorn.main import main as uvicorn_main
 
 DOCKERFILE = Path(__file__).resolve().parent.parent / "Dockerfile"
@@ -50,6 +52,23 @@ def test_image_start_command_defaults() -> None:
 def test_image_start_command_reads_the_platform_port() -> None:
     options = start_options({"PORT": "8080", "GRACEFUL_SHUTDOWN_SECONDS": "5"})
     assert (options["port"], options["timeout_graceful_shutdown"]) == (8080, 5)
+
+
+@pytest.mark.parametrize("env", [{}, {"PORT": ""}, {"PORT": "8080"}])
+def test_healthcheck_calls_the_port_the_server_listens_on(
+    env: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    match = re.search(r"^HEALTHCHECK .*\\\n\s+CMD (\[.*\])$", DOCKERFILE.read_text("utf-8"), re.M)
+    assert match is not None
+    program, flag, code = json.loads(match.group(1))
+    assert (program, flag) == ("python", "-c")
+    urls: list[str] = []
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout: urls.append(url))
+    monkeypatch.delenv("PORT", raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    exec(code, {})  # noqa: S102 (the Dockerfile's own healthcheck, with urlopen replaced)
+    assert urls == [f"http://127.0.0.1:{start_options(env)['port']}/health"]
 
 
 def test_image_records_its_revision() -> None:
