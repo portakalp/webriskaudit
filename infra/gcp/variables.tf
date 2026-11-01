@@ -26,6 +26,12 @@ variable "site_hostname" {
   default     = "webriskaudit.com"
 }
 
+variable "api_alert_enabled" {
+  description = "Turn on the alert of the API /health uptime check. Leave off until the first deploy serves the API; before that the check fails (docs/DEPLOYMENT.md, checklist step 10)."
+  type        = bool
+  default     = false
+}
+
 variable "alert_email" {
   description = "Address that receives uptime alerts."
   type        = string

@@ -148,6 +148,10 @@ terraform output
 Note `lb_ip`, `nat_ip`, `wif_provider`, `deployer_sa` and
 `dns_authorization_record`.
 
+The API's uptime check runs from now on, but its alert stays off
+(`api_alert_enabled = false`): until the first deploy only the placeholder
+service answers, so the check fails. Checklist step 10 turns the alert on.
+
 Things Terraform does not do here, with the command instead:
 
 - **The default network.** Enabling the Compute Engine API creates a
@@ -387,6 +391,11 @@ bucket.
    to `nat_ip`. Record the metadata result in the threat model: if it is
    reachable, a request with the header gets a token for `api-runtime`,
    which has no roles beyond reading the origin secret.
+10. **API alert.** Monitoring → Uptime checks → `WebRiskAudit API /health`
+    passes from all three locations (it needs `{"status":"ok"}`, which the
+    placeholder does not serve). Then set `api_alert_enabled = true` in
+    `infra/gcp/terraform.tfvars` and run `terraform -chdir=infra/gcp apply`;
+    the plan changes only that alert policy.
 
 ### Site on workers.dev
 
@@ -514,9 +523,11 @@ short-lived tokens, and no service account keys exist; do not create any.
 ## Monitoring
 
 Terraform creates uptime checks for `https://api.webriskaudit.com/health`
-(JSON `status` must be the string `"ok"`) and `https://webriskaudit.com/` (status only),
-every 5 minutes from Europe, Virginia and Asia-Pacific, and an alert policy
-per check that emails `alert_email` when more than one location fails.
+(JSON `status` must be the string `"ok"`) and `https://webriskaudit.com/`
+(status only), every 5 minutes from Europe, Virginia and Asia-Pacific, and
+an alert policy per check that emails `alert_email` when more than one
+location fails. The API's alert is created switched off and turned on after
+the first deploy (checklist step 10).
 
 By hand:
 
