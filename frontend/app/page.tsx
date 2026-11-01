@@ -1,88 +1,91 @@
 "use client"
 
 import { useState } from "react"
-import { ScanWorkflow, WorkflowStep } from "@/components/ScanWorkflow"
-import { DotGridBackground } from "@/components/dot-grid-background"
-import { SiteFooter } from "@/components/site-footer"
 import Image from "next/image"
 import Link from "next/link"
+import { ScanWorkflow, type WorkflowStep } from "@/components/ScanWorkflow"
+import { DotGridBackground } from "@/components/dot-grid-background"
+import { SiteFooter } from "@/components/site-footer"
 
 export default function Home() {
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>("form")
+  // The report takes the full content width instead of the half-width card
+  const showReport = workflowStep === "report"
 
   return (
-    <main className="relative min-h-screen flex flex-col overflow-hidden bg-[#F8FAFC]">
+    <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#F8FAFC]">
       <DotGridBackground />
 
       <header className="relative z-10 flex items-center justify-between p-4 md:p-6">
-        <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity" aria-label="WebRiskAudit - Home">
-          <span className="text-xs md:text-sm font-semibold tracking-[0.2em] text-slate-800 uppercase">
+        <Link href="/" className="rounded transition-opacity hover:opacity-80" aria-label="WebRiskAudit home">
+          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-800 md:text-sm">
             WebRiskAudit
           </span>
         </Link>
         <a
           href="https://github.com/portakalp/webriskaudit"
-          className="text-xs md:text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+          className="rounded text-xs font-medium text-slate-700 transition-colors hover:text-slate-900 md:text-sm"
         >
           GitHub
         </a>
       </header>
 
-      {/* Main content - 2 column split */}
-      <div className="relative z-10 flex-1 flex items-center justify-center px-4 md:px-8 lg:px-16 py-8">
-        <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 items-center">
-          <div className="hidden lg:flex flex-col items-center justify-center">
-            <Image
-              src="/images/hero-kale.png"
-              alt="WebRiskAudit logo"
-              width={800}
-              height={700}
-              className="w-full max-w-2xl h-auto object-contain"
-              style={{ minHeight: "60vh" }}
-              priority
-            />
-            <p className="mt-6 text-xl md:text-2xl font-semibold text-slate-800 leading-relaxed max-w-xl text-center">
-              An open-source passive security scanner.{" "}
-              <span className="text-slate-600">
-                It reads the public signals a domain already exposes and summarizes them in a single score.
-              </span>
-            </p>
-          </div>
+      <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-8 md:px-8 lg:px-16">
+        <div
+          className={`grid w-full max-w-7xl grid-cols-1 items-center gap-8 lg:gap-16 ${showReport ? "" : "lg:grid-cols-2"}`}
+        >
+          {!showReport && (
+            <div className="hidden flex-col items-center justify-center lg:flex">
+              <Image
+                src="/images/hero-kale.png"
+                alt="WebRiskAudit logo"
+                width={800}
+                height={700}
+                className="h-auto w-full max-w-2xl object-contain"
+                style={{ minHeight: "60vh" }}
+                priority
+              />
+              <p className="mt-6 max-w-xl text-center text-xl font-semibold leading-relaxed text-slate-800 md:text-2xl">
+                An open-source passive security scanner.{" "}
+                <span className="text-slate-600">
+                  It reads the public signals a domain already exposes and shows the evidence behind every result.
+                </span>
+              </p>
+            </div>
+          )}
 
-          <div className="w-full max-w-5xl mx-auto lg:mx-0 lg:ml-auto">
-            <div className="relative bg-white rounded-2xl p-8 md:p-10 shadow-2xl shadow-slate-900/10 overflow-hidden border border-slate-100">
-              {/* Content */}
-              <div className="relative z-10">
-                {(workflowStep === "form" || workflowStep === "scanning") && (
-                  <>
-                    <h1 className="text-2xl md:text-3xl font-bold leading-tight text-center text-balance text-slate-900">
-                      Security posture check for a domain
-                    </h1>
-
-                    {/* Sub-headline */}
-                    <p className="mt-4 text-sm text-slate-600 text-center text-pretty">
-                      Checks email authentication (SPF, DKIM, DMARC), DNS blocklists, the TLS certificate,
-                      HTTP security headers, the server banner, CDN or WAF presence and a privacy policy page.
-                    </p>
-                  </>
-                )}
-
-                {/* Form */}
-                <ScanWorkflow onStepChange={setWorkflowStep} />
-
-                <p className="mt-6 pt-6 border-t border-slate-100 text-xs text-slate-500 text-center text-pretty">
-                  Only passive checks are performed: DNS lookups, a TLS certificate check and HTTP requests for
-                  the home page and for up to about 50 common privacy-policy paths, stopping at the first one
-                  found. Results are automated and heuristic, and are not a substitute for a professional
-                  security assessment.
+          <div className={showReport ? "w-full" : "mx-auto w-full max-w-5xl lg:mx-0 lg:ml-auto"}>
+            <div className="relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-5 text-slate-900 shadow-2xl shadow-slate-900/10 sm:p-8 md:p-10">
+              <h1
+                className={
+                  showReport
+                    ? "sr-only"
+                    : "text-balance text-center text-2xl font-bold leading-tight text-slate-900 md:text-3xl"
+                }
+              >
+                Security posture check for a domain
+              </h1>
+              {!showReport && (
+                <p className="mt-4 text-pretty text-center text-sm text-slate-700">
+                  Checks email authentication (SPF, DMARC, DKIM), the TLS certificate, the redirect from HTTP to
+                  HTTPS, HSTS and other HTTP security headers, and cookie flags. Every result comes with the evidence
+                  behind it.
                 </p>
-              </div>
+              )}
+
+              <ScanWorkflow onStepChange={setWorkflowStep} />
+
+              <p className="mt-6 text-pretty border-t border-slate-100 pt-6 text-center text-xs text-slate-600">
+                Only passive checks are performed: DNS lookups, one TLS handshake and HTTP GET requests for the
+                http:// and https:// home page, following up to 5 redirects. Results are automated and heuristic,
+                and are not a substitute for a professional security assessment.
+              </p>
             </div>
           </div>
         </div>
-      </div>
+      </main>
 
       <SiteFooter />
-    </main>
+    </div>
   )
 }

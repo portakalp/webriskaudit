@@ -1,21 +1,10 @@
-"use client"
+import { LoaderCircle } from "lucide-react"
 
-import { Loader2 } from "lucide-react"
-import type { ScanPhase } from "./types"
-
-interface ScanPhaseIndicatorProps {
-  phase: ScanPhase
-}
-
-export function ScanPhaseIndicator({ phase }: ScanPhaseIndicatorProps) {
+export function ScanPhaseIndicator({ label }: { label: string }) {
   return (
-    <div className="text-center p-4 bg-slate-50 rounded-lg border-2 border-slate-200 animate-in fade-in duration-300">
-      <div className="flex items-center justify-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
-        <span className="text-sm font-medium text-slate-700">
-          {phase.name}
-        </span>
-      </div>
+    <div className="flex items-center justify-center gap-2 rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
+      <LoaderCircle className="h-4 w-4 text-orange-700 motion-safe:animate-spin" aria-hidden="true" />
+      <span className="text-sm font-medium text-slate-800">{label}</span>
     </div>
   )
 }
