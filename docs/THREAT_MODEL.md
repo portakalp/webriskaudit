@@ -2,8 +2,9 @@
 
 This document covers the v2 scanner API (`backend/`) and the static website
 (`frontend/`) as of 1 November 2026. It lists what needs protecting, who might
-attack it, what the code does about it today, and what the deployment has to
-add. File references are relative to `backend/src/webriskaudit/`.
+attack it, what the code does about it, what the deployment has to add and
+how the production deployment adds it. File references are relative to
+`backend/src/webriskaudit/` unless they start at the repository root.
 
 ## What the service is
 
@@ -20,9 +21,13 @@ about the network layer.
   Visitor's browser
      |  static files                         POST /api/v1/scan {"domain": "..."}
      v                                          |
-  Static host + Cloudflare (frontend/out)       v
-                                             Cloudflare and the platform's proxy
-                                               (set X-Origin-Auth, CF-Connecting-IP)
+  Cloudflare, Worker static assets              v
+  (frontend/out)                             Cloudflare
+                                               (sets X-Origin-Auth, CF-Connecting-IP)
+                                                |
+                                                v
+                                             Google load balancer
+                                               -> Cloud Run, 1 instance (europe-west1)
                                                 |
                                                 v
                                              uvicorn + FastAPI (api.py)
@@ -36,6 +41,8 @@ about the network layer.
                   v                             v                             v
              DnsResolver                  GuardedFetcher                   TlsProbe
              (net/dns.py)                 (net/http.py)                  (net/tls.py)
+                  |                             |                             |
+                  +------ VPC egress firewall, Cloud NAT (one address) -------+
                   |                             |                             |
                   v                             v                             v
           recursive resolver        scanned host and any public       scanned host,
@@ -68,6 +75,7 @@ Its settings are limits, allowed origins and the DNS resolvers to query.
 | --------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Browser to static site      | Static files                            | No server code runs for the site ([ADR 0005](adr/0005-static-frontend-export.md)).                             |
 | Client to API               | JSON body, client address, `Origin`     | Untrusted. CORS decides which web pages may read responses; it does not stop other clients.                    |
+| Cloudflare to API           | `X-Origin-Auth`, `CF-Connecting-IP`     | The client address is trusted only on requests whose `X-Origin-Auth` matches a configured secret; the rest get 403. |
 | API to DNS                  | Queries and answers                     | The resolver is trusted to resolve, but answers for the scanned domain come from whoever controls that domain: any address, any TXT content. |
 | API to scanned hosts        | Status, headers, redirects, body, certificate, timing | Untrusted. Redirects may point anywhere; bodies may be huge, slow or compressed.                  |
 | API to logs and platform    | Log lines                               | Must not carry client addresses or attacker-controlled line breaks.                                           |
@@ -231,10 +239,15 @@ Its settings are limits, allowed origins and the DNS resolvers to query.
    breaks and control characters in any value are escaped and cannot start a
    new log line or forge fields.
 2. **What is logged.** One line per scan request: outcome, the normalized
-   domain, cache use (`miss`, `hit` or `coalesced`), score, grade, coverage and
-   duration. The normalized domain is lower-case ASCII letters, digits,
-   hyphens and dots only. The raw input of an invalid request, request
-   bodies and client addresses are never logged.
+   domain, cache use (`miss`, `hit` or `coalesced`), score, grade, coverage,
+   the source of the client address (`client_ip_source`: `header` or `peer`,
+   never the address itself) and the time spent waiting for a slot,
+   scanning and in total. For an invalid body, only the number and types of
+   the validation errors. At startup, one line with the effective settings,
+   which counts the origin secrets but never shows them. The normalized
+   domain is lower-case ASCII letters, digits, hyphens and dots only. The raw
+   input of an invalid request, request bodies and client addresses are
+   never logged.
 3. **uvicorn's access log is switched off** at startup, because it would
    record client addresses. The image also runs uvicorn with `--ws none`:
    its WebSocket support logs the client address and raw path of every
@@ -283,19 +296,33 @@ has this limit; the report describes what the scanner saw.
 
 CI pins GitHub Actions to commit SHAs, runs with a read-only token, installs
 from lockfiles (`uv sync --locked`, `pnpm install --frozen-lockfile`), audits
-dependencies (`pip-audit`, `pnpm audit`), scans for secrets (gitleaks) and
-builds both Docker images without pushing them. The Dockerfiles pin their
+dependencies (`pip-audit`, `pnpm audit`), scans for secrets (gitleaks),
+builds both Docker images and checks the Terraform in `infra/gcp/` (format,
+validate, and tests against a mocked provider). The Dockerfiles pin their
 base images by tag and digest. Dependabot proposes updates for the npm and uv
-dependencies, the GitHub Actions and the Docker base images. The v1 history
-was not imported because it contained a hardcoded credential.
+dependencies, the GitHub Actions, the Docker base images and the Terraform
+provider. The v1 history was not imported because it contained a hardcoded
+credential.
+
+Deploys run only on `main`, after every CI job has passed, and only when the
+repository variable `DEPLOY_API` or `DEPLOY_SITE` is `true`. The API deploy
+holds no Google key: Workload Identity Federation exchanges the job's GitHub
+OIDC token only for push and manual runs of the deploy and rollback
+workflows on `main` of this repository (`infra/gcp/wif.tf`), for a service
+account that can replace only the API service, push only to its image
+repository and deploy only as the runtime account. The image is deployed by
+digest. The site deploy uses a Cloudflare token with the permission Workers
+Scripts: Edit only. *Unverified:* whether `wrangler deploy` needs more
+(DEPLOYMENT.md, step 6l).
 
 ## Data kept
 
-| Data                                   | Where                                       | How long                                                                                                                                                           |
-| -------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Client address (IPv4, or the IPv6 /64) | Rate limiter and scan queue, process memory | While it has hits in the window or a new scan waiting or running; removed by a sweep after the hits expire; lost on restart. Never logged or persisted by the app. |
-| Scanned domain and report              | Cache, process memory                       | 10 minutes (at most 1024 reports); lost on restart.                                                                                                                |
-| Scanned domain                         | Application log (stderr)                    | As long as the hosting platform keeps logs.                                                                                                                        |
+| Data                                   | Where                                       | How long                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client address (IPv4, or the IPv6 /64) | Rate limiter and scan queue, process memory | While it has hits in the 10-minute window or a new scan waiting or running, then until the next request of any kind (the liveness probe calls `/health` every 30 seconds); lost on restart and deploy. Never logged or persisted by the app.                                                                        |
+| Client address in request headers      | Cloudflare, load balancer, Cloud Run        | Not stored in Google Cloud: the load balancer logs no requests and Cloud Run's request logs are excluded. Requests that Cloudflare's rules block can be recorded with the client address in the zone's security events, which the operator can see for up to 31 days. Cloudflare keeps its own logs (privacy note). |
+| Scanned domain and report              | Cache, process memory                       | Served for 10 minutes, then until the next request (at most 1024 reports); lost on restart and deploy.                                                                                                                                                                                                              |
+| Scanned domain                         | Application log (`webriskaudit-logs`)       | 14 days in production. Unexpected errors, which name the domain, also up to 30 days in Error Reporting.                                                                                                                                                                                                             |
 
 There is no database, no account, no cookie and no analytics. See
 [ADR 0003](adr/0003-no-personal-data.md).
@@ -305,6 +332,8 @@ There is no database, no account, no cookie and no analytics. See
 1. **Defence in depth for SSRF depends on the deployment.** The address checks
    are code; a bug in them, in a library, or a range missing from the tables
    would expose the internal network unless the network itself blocks it.
+   Production has an egress firewall (deployment item 1), with the metadata
+   server as the exception (risk 12).
 2. **Split-horizon DNS.** Unless `DNS_NAMESERVERS` is set, the scanner uses
    the resolvers in `/etc/resolv.conf`. If those serve internal zones,
    internal names that resolve to private addresses are refused, but the
@@ -321,28 +350,91 @@ There is no database, no account, no cookie and no analytics. See
 4. **Rate limiting is per client key and per process.** Clients with a /48
    or larger IPv6 allocation, or many IPv4 addresses, can rotate keys; the
    global limit of 600 new scans per window bounds the total. The limits,
-   cache and queue are in memory: they reset on restart and multiply with
-   the number of workers or instances.
+   cache and queue are in memory and per process (risk 11).
 5. **The cache key is the host name.** Varying subdomains of a victim with
    wildcard DNS bypasses the cache; the rate limits and the scan queue still
    apply.
 6. **No authentication.** The API is public by design; abuse controls are
-   the only barrier.
+   the only barrier. Origin authentication proves that a request came
+   through Cloudflare, not who sent it.
 7. **Logs record scanned domains.** A domain can identify a person (for
-   example a personal domain). Retention is set by the hosting platform.
+   example a personal domain). Production keeps the logs for 14 days, and
+   Error Reporting keeps unexpected errors, which name the domain, for 30
+   days.
 8. **Report strings are attacker-controlled** and safe only as long as the
    frontend keeps rendering them as text.
+9. **Dependence on Cloudflare.** Cloudflare serves the site, ends visitors'
+   TLS for both hosts, holds the origin secret in a Transform Rule and
+   supplies the client address, so it sees all visitor traffic, and an
+   outage takes both hosts down. Its settings live in the dashboard, not in
+   this repository: without the Transform Rule, or with a stale secret, the
+   API answers 403 to everything but `/` and `/health` (it fails closed);
+   "Remove visitor IP headers" makes every scan 400; Pseudo IPv4 in
+   overwrite mode gives each IPv6 address its own rate limit key. The deploy
+   smoke test notices the first two, but only at a deploy: the uptime check
+   calls `/health`, which needs no secret. Whoever learns the secret can
+   reach the load balancer directly and choose their client address; it is
+   rotated yearly (DEPLOYMENT.md, Rotation).
+10. **Reputation of the NAT address.** Every scan leaves from one published
+    address. Scans that others request, within the limits, can get it
+    blocked by sites or listed on blocklists, which makes checks against
+    those sites inconclusive for everyone, or draw abuse reports to Google.
+    [SECURITY.md](../SECURITY.md) tells site owners how to recognise, block
+    and report the scanner.
+11. **In-memory state resets.** Each deploy, restart or platform maintenance
+    event starts an instance with empty rate limits and cache, so every
+    client gets a fresh quota and cached domains are scanned again. During a
+    deploy the new revision's instance runs next to the old one for a short
+    time, each with its own limits.
+12. **The metadata server is reachable by design.** The egress firewall
+    denies `169.254.0.0/16`, but Google documents the metadata server as
+    always reachable for VMs, and Cloud Run's own runtime uses it, so it is
+    treated as reachable (the egress check job records what it sees). The
+    scanner cannot use it: link-local addresses fail the public-address
+    test, and the server answers only requests with a `Metadata-Flavor`
+    header, which the scanner never sends. Code that reached it anyway would
+    get a token for `api-runtime`, which has no project roles; its one
+    permission is reading the origin secret, which the process already
+    holds.
 
-## What the deployment must add
+## What the deployment must add, and how it is met
+
+Production runs the API on Google Cloud Run in europe-west1, behind a
+Google external Application Load Balancer and Cloudflare, and serves the
+site from Cloudflare Workers static assets
+([ADR 0007](adr/0007-api-on-cloud-run.md),
+[ADR 0008](adr/0008-site-on-workers-static-assets.md)). The configuration is
+in `infra/gcp/` (Terraform) and `deploy/cloudrun/service.yaml`; the steps,
+including the Cloudflare settings that exist only in its dashboard, are in
+[DEPLOYMENT.md](DEPLOYMENT.md). Points marked *unverified* are checked at
+the first deploy (DEPLOYMENT.md, "Unverified points").
 
 1. **Egress firewall.** Allow outbound TCP 80 and 443 and DNS to the
    configured resolver only. Deny private, link-local, metadata, loopback and
    other non-public ranges (IPv4 and IPv6) at the network level, as a second
    layer behind the code.
+
+   *Met by* Direct VPC egress with all traffic routed into the VPC
+   `webriskaudit`, where egress rules on the instance's network tag apply
+   (`infra/gcp/network.tf`): priority 900 denies the special-purpose IPv4
+   ranges (`0.0.0.0/8`, RFC 1918, carrier-grade NAT, loopback, link-local
+   including the metadata address, the IETF, documentation and
+   benchmarking ranges, multicast and `240.0.0.0/4`); priority 1000 allows
+   TCP 80 and 443 to anywhere else, and TCP and UDP 53 to `1.1.1.1` and
+   `9.9.9.10` only; priority 65000 denies everything else. Cloud NAT
+   translates to one reserved address. The subnet is IPv4-only, so the API
+   should have no IPv6 egress (*unverified*). The metadata server is the
+   exception (residual risk 12). `terraform test` in CI checks the rules as
+   written, and a one-off job (`deploy/checks/egress_check.py`,
+   DEPLOYMENT.md checklist step 9) probes them from inside the VPC.
 2. **A public recursive resolver** without internal zones: set
    `DNS_NAMESERVERS` (for example `1.1.1.1,9.9.9.10`; Quad9's `9.9.9.9`
    filters domains, which then look nonexistent), or make sure the
    container's `/etc/resolv.conf` points to such a resolver.
+
+   *Met by* `DNS_NAMESERVERS=1.1.1.1,9.9.9.10` in `service.yaml`, so
+   `resolv.conf` is not read, and the firewall lets port 53 reach only
+   those two resolvers.
 3. **Origin authentication and the client address.** Behind a proxy, set
    `ORIGIN_AUTH_SECRETS` and `CLIENT_IP_HEADER` (`CF-Connecting-IP` behind
    Cloudflare), and have the proxy set `X-Origin-Auth` to one of the secrets
@@ -354,19 +446,82 @@ There is no database, no account, no cookie and no analytics. See
    append to a client-supplied `X-Forwarded-For`, so with
    `--forwarded-allow-ips="*"` each request can pick its own rate limit key.
    The image runs uvicorn with `--no-proxy-headers`.
+
+   *Met by* `ORIGIN_AUTH_SECRETS` from the Secret Manager secret
+   `webriskaudit-origin-auth` and `CLIENT_IP_HEADER=CF-Connecting-IP` in
+   `service.yaml`. A Cloudflare Transform Rule sets `X-Origin-Auth` on every
+   request for `api.webriskaudit.com`, and Pseudo IPv4 and "Remove visitor
+   IP headers" are off (DEPLOYMENT.md, steps 6f and 6k). Cloud Run's ingress
+   (`internal-and-cloud-load-balancing`) closes the `run.app` URL, so the
+   load balancer's address is the only other way in, and without the secret
+   it gets 403; the deploy smoke test checks this. *Unverified:* that
+   Cloudflare replaces a `CF-Connecting-IP` sent by the client
+   (DEPLOYMENT.md, checklist step 5).
 4. **One process.** Run one worker per instance and one instance, or accept
    that every limit multiplies with the number of processes. Deploys and
    restarts reset the limits and the cache.
+
+   *Met by* `--workers 1` in the image and manual scaling with exactly one
+   instance (`run.googleapis.com/scalingMode: manual`,
+   `manualInstanceCount: "1"`), which switches the autoscaler off. A deploy
+   still runs two instances for a short time (residual risk 11).
 5. **Proxy limits.** Cap the request body size at the proxy too (a few
    kilobytes is enough), and set request and header timeouts and a
    connection limit. Allow requests to stay open for about 75 seconds (queue
    wait plus scan deadline).
+
+   *Met by:*
+   - **Time.** A request spends at most about 75 seconds in the app (30
+     seconds waiting for a slot, 45 seconds of scan deadline), less than
+     Cloud Run's request timeout of 120 seconds (`timeoutSeconds`), which is
+     less than Cloudflare's proxy read timeout of 125 seconds (fixed below
+     the Enterprise plan). The site gives up after 90 seconds
+     (`frontend/lib/api.ts`).
+   - **Connections.** Visitors connect to Cloudflare; the API only sees
+     connections from Google's front ends, and Cloud Run sends it at most
+     40 requests at a time (`containerConcurrency: 40`).
+   - **Body size.** Not capped to a few kilobytes by the proxies: Cloudflare
+     accepts bodies up to 100 MB on the Free plan and Cloud Run up to 32 MiB
+     over HTTP/1. The app answers 413 once a body passes 8 KiB
+     (`BodySizeLimit`), so a large body costs transfer, not memory.
+   - **Cloudflare rules.** A WAF rule blocks methods other than `GET`,
+     `HEAD`, `POST` and `OPTIONS` on the API host, and a rate limiting rule
+     allows 10 requests per 10 seconds per address to `/api/v1/scan`
+     (DEPLOYMENT.md, steps 6h and 6i).
 6. **Settings.** Set `ALLOWED_ORIGINS` to the real site origin, and keep
    `RATE_LIMIT_SCANS`, `GLOBAL_RATE_LIMIT_SCANS` and `CACHE_TTL_SECONDS`
    above 0 in production (0 turns those controls off). Invalid values stop
    the app at startup.
+
+   *Met by* `ALLOWED_ORIGINS=https://webriskaudit.com` and
+   `API_DOCS_ENABLED=false` in `service.yaml`, with the rate limit, cache,
+   queue and timeout settings at their defaults, all above 0. Setting only
+   one of `ORIGIN_AUTH_SECRETS` and `CLIENT_IP_HEADER` also stops the app.
+   The `startup` log line records the effective settings, and the deploy
+   smoke test checks that `GET /` reports the new revision and no docs.
 7. **Log retention.** Keep application logs and the platform's own access
    logs (which do contain client addresses) for a short, stated period, in
    line with the site's privacy note.
+
+   *Met by* a project sink that sends what `_Default` would keep to the
+   bucket `webriskaudit-logs` in europe-west1, kept for 14 days, with the
+   `_Default` sink disabled (`infra/gcp/logging.tf`). Cloud Run's request
+   logs, which record each caller's address, are excluded from both sinks,
+   and the load balancer's request logging is off. Cloud NAT logs errors
+   only, since full logs would record every scanned address. Error
+   Reporting, a global service that reads these logs, can keep unexpected
+   errors with their tracebacks for 30 days. Audit logs of the operator's
+   and CI's actions go to the `_Required` bucket, which cannot be changed.
+   Cloudflare's logs are outside the project, except that requests blocked
+   by its rules (DEPLOYMENT.md, steps 6h and 6i) can be recorded with the
+   client address in the zone's security events, which the operator can
+   see for up to 31 days; the privacy note describes both. *Unverified:*
+   that the request-log exclusion holds (DEPLOYMENT.md, checklist step 7).
 8. **Updates.** CA trust comes from certifi, not the system store, so keep
    dependencies current (Dependabot, `uv lock --upgrade`).
+
+   *Met by* weekly Dependabot updates for the npm and uv dependencies, the
+   GitHub Actions, the Docker base images and the Terraform provider; once
+   the deploy variables are on, a merge to `main` that passes CI is
+   deployed. The wrangler version used by the site deploy is checked by
+   hand every three months (DEPLOYMENT.md, Monitoring).
