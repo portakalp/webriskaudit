@@ -12,8 +12,18 @@ run "defaults" {
   command = plan
 
   assert {
-    condition     = google_iam_workload_identity_pool_provider.github.attribute_condition == "assertion.repository_id == '1441833024' && assertion.ref == 'refs/heads/main'"
+    condition = google_iam_workload_identity_pool_provider.github.attribute_condition == join(" && ", [
+      "assertion.repository_id == '1441833024'",
+      "assertion.ref == 'refs/heads/main'",
+      "(assertion.event_name == 'push' || assertion.event_name == 'workflow_dispatch')",
+      "(assertion.workflow_ref == 'portakalp/webriskaudit/.github/workflows/ci.yml@refs/heads/main' || assertion.workflow_ref == 'portakalp/webriskaudit/.github/workflows/rollback-api.yml@refs/heads/main')",
+    ])
     error_message = "Unexpected WIF condition: ${google_iam_workload_identity_pool_provider.github.attribute_condition}"
+  }
+
+  assert {
+    condition     = alltrue([for claim in ["repository_id", "ref", "event_name", "workflow_ref", "environment"] : google_iam_workload_identity_pool_provider.github.attribute_mapping["attribute.${claim}"] == "assertion.${claim}"])
+    error_message = "Every claim the WIF condition uses must be mapped."
   }
 
   assert {
@@ -50,12 +60,13 @@ run "defaults" {
   }
 }
 
-run "after_first_deploy" {
+run "variables_set" {
   command = plan
 
   variables {
     api_alert_enabled          = true
     github_require_environment = true
+    github_deploy_workflows    = ["ci.yml"]
   }
 
   assert {
@@ -64,7 +75,17 @@ run "after_first_deploy" {
   }
 
   assert {
-    condition     = endswith(google_iam_workload_identity_pool_provider.github.attribute_condition, " && assertion.environment == 'production'")
-    error_message = "github_require_environment must add the environment claim: ${google_iam_workload_identity_pool_provider.github.attribute_condition}"
+    condition     = endswith(google_iam_workload_identity_pool_provider.github.attribute_condition, " && (assertion.workflow_ref == 'portakalp/webriskaudit/.github/workflows/ci.yml@refs/heads/main') && assertion.environment == 'production'")
+    error_message = "Unexpected WIF condition: ${google_iam_workload_identity_pool_provider.github.attribute_condition}"
   }
+}
+
+run "rejects_quotes_in_workflow_names" {
+  command = plan
+
+  variables {
+    github_deploy_workflows = ["ci.yml' || true || '.yml"]
+  }
+
+  expect_failures = [var.github_deploy_workflows]
 }

@@ -53,6 +53,28 @@ variable "github_repository_id" {
   }
 }
 
+variable "github_repository" {
+  description = "OWNER/NAME of the repository in github_repository_id, spelled as on GitHub; the WIF condition names its deploy workflows by this path."
+  type        = string
+  default     = "portakalp/webriskaudit"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$", var.github_repository))
+    error_message = "github_repository must be OWNER/NAME."
+  }
+}
+
+variable "github_deploy_workflows" {
+  description = "Files in .github/workflows whose push and workflow_dispatch runs on main may deploy."
+  type        = list(string)
+  default     = ["ci.yml", "rollback-api.yml"]
+
+  validation {
+    condition     = length(var.github_deploy_workflows) > 0 && alltrue([for file in var.github_deploy_workflows : can(regex("^[A-Za-z0-9._-]+[.]ya?ml$", file))])
+    error_message = "github_deploy_workflows must list workflow file names such as ci.yml."
+  }
+}
+
 variable "github_require_environment" {
   description = "Also require the GitHub environment claim. Turn on once the deploy jobs run in that environment (environments need a public repository on GitHub Free)."
   type        = bool

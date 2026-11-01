@@ -52,9 +52,10 @@ repository:
 - **Identities**: the runtime service account has no project roles, only
   access to the origin secret. The deploy workflow authenticates with
   **Workload Identity Federation** (no service account keys), limited to
-  this repository's numeric ID and `refs/heads/main`, and may only replace
-  this one service, push to its Artifact Registry repository and act as the
-  runtime account.
+  this repository's numeric ID, `refs/heads/main`, `push` and
+  `workflow_dispatch` runs and the deploy and rollback workflow files, and
+  may only replace this one service, push to its Artifact Registry
+  repository and act as the runtime account.
 - **Configuration as code, split by owner**: Terraform in `infra/gcp/`
   creates the project-level resources and a placeholder service
   (`ignore_changes = all`); the deploy workflow owns the service spec in
