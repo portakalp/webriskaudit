@@ -140,6 +140,10 @@ REQUIRED_HEADERS = [
 # Cloudflare IP Prefixes
 CLOUDFLARE_IP_PREFIXES = ['172.67', '104.21', '104.16', '104.17', '104.18', '104.19']
 
+# Markers that only appear on a Cloudflare challenge interstitial. Normal pages
+# behind Cloudflare can load challenge-platform scripts and mention Cloudflare.
+CLOUDFLARE_CHALLENGE_MARKERS = ['_cf_chl_opt', '<title>just a moment']
+
 # Server Header Values
 MASKED_SERVER_VALUES = ['cloudflare', 'cdn77', 'akamai', 'fastly', 'aws', 'cloudfront']
 DISCLOSED_SERVER_VALUES = ['apache', 'nginx', 'microsoft-iis', 'express', 'node.js', 'tomcat']
@@ -715,8 +719,12 @@ class SecurityAuditor:
                 if response.status_code == 200:
                     # A challenge page is not privacy policy content
                     content_lower = response.text.lower()
+                    is_challenge = (
+                        response.headers.get('cf-mitigated', '').lower() == 'challenge'
+                        or any(marker in content_lower for marker in CLOUDFLARE_CHALLENGE_MARKERS)
+                    )
 
-                    if 'challenge' in content_lower and 'cloudflare' in content_lower:
+                    if is_challenge:
                         logger.warning(f"Cloudflare challenge page detected for {url}")
                         consecutive_failures += 1
                         if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
