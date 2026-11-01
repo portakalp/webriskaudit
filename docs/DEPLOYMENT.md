@@ -90,13 +90,24 @@ Do this first if the repository is going public before launch.
 3. Settings → Actions → General: fork pull request workflows from outside
    collaborators → **Require approval for all outside collaborators**;
    Workflow permissions → **Read repository contents**.
-4. Settings → Environments → **New environment** `production` →
+4. Settings → Rules → Rulesets → **New branch ruleset**: name `main`,
+   enforcement **Active**, target **Include default branch**. Turn on
+   **Restrict deletions**, **Block force pushes**, **Require a pull request
+   before merging** (no required approvals; you are the only maintainer)
+   and **Require status checks to pass** with the CI jobs `Frontend (lint,
+   types, tests, build)`, `Backend (lint, types, tests, OpenAPI)`, `Docker
+   images (build, smoke test)`, `Dependency audit`, `Terraform (format,
+   validate, test)` and `Secret scan`. Leave the bypass list empty.
+   Workload Identity Federation trusts the deploy workflows on `main`, so
+   nothing should reach `main` without review and CI.
+5. Settings → Environments → **New environment** `production` →
    Deployment branches → **Selected branches** → `main`. Add no reviewers,
    or automatic deploys wait for approval.
 
-On GitHub Free, environments only work in public repositories. If the
-repository stays private, skip step 4, keep `github_require_environment =
-false` in Terraform, and the deploy jobs must not use `environment:`.
+On GitHub Free, rulesets and environments only work in public
+repositories. If the repository stays private, skip steps 4 and 5, keep
+`github_require_environment = false` in Terraform, and the deploy jobs must
+not use `environment:`.
 
 ### 2. Google Cloud account, billing and project
 
@@ -274,6 +285,11 @@ gh variable set DEPLOY_SITE --body false
 gh secret set CLOUDFLARE_API_TOKEN --env production   # prompts for the value
 # Private repository (no environments): gh secret set CLOUDFLARE_API_TOKEN
 ```
+
+Workload Identity Federation accepts only `push` and `workflow_dispatch`
+runs on `main` of the workflow files in `github_deploy_workflows`
+(`ci.yml` and `rollback-api.yml`). A new or renamed deploy workflow must be
+added there, and applied, before it can authenticate.
 
 Once the deploy jobs run in the `production` environment, also require it
 in Workload Identity Federation: set `github_require_environment = true` in
