@@ -133,13 +133,22 @@ not use `environment:`.
 brew install --cask google-cloud-sdk
 brew install hashicorp/tap/terraform        # 1.16 or later
 gcloud auth login
-gcloud auth application-default login
 gcloud config set project PROJECT_ID
+# Credentials for Terraform (Application Default Credentials), with this
+# project as the quota project.
+gcloud auth application-default login
+gcloud auth application-default set-quota-project PROJECT_ID
 
 gcloud storage buckets create gs://PROJECT_ID-tfstate --location=europe-west1 \
   --uniform-bucket-level-access --public-access-prevention
 gcloud storage buckets update gs://PROJECT_ID-tfstate --versioning
 ```
+
+Terraform calls Google APIs with your user credentials, and with user
+credentials some APIs, such as Service Usage (which enables the other APIs
+in step 4), refuse requests without a quota project. The ADC login takes
+the quota project from the gcloud configuration, so the project is set
+first; `set-quota-project` makes sure.
 
 The state holds resource attributes but no secret values (the origin
 secret's value never goes through Terraform).
