@@ -63,7 +63,8 @@ repository:
   `deploy/cloudrun/service.yaml` and replaces it on each deploy.
 - **Logs** go to a log bucket in europe-west1 with 14-day retention; the
   `_Default` sink is disabled and Cloud Run's request logs (which contain
-  the caller's address) are excluded.
+  the caller's address) are excluded. Error Reporting keeps unexpected
+  errors, which name the scanned domain, for up to 30 days.
 
 ## Alternatives considered
 
