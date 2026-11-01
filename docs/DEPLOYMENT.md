@@ -2,7 +2,8 @@
 
 How webriskaudit.com and api.webriskaudit.com are hosted, how to set them up
 from nothing, and how to operate them. The reasons are in
-[ADR 0007](adr/0007-api-on-cloud-run.md).
+[ADR 0007](adr/0007-api-on-cloud-run.md) (API) and
+[ADR 0008](adr/0008-site-on-workers-static-assets.md) (site).
 
 The setup steps need accounts, payment details or dashboards, so the owner
 does them by hand, in the order given. Points marked **Unverified** come
@@ -56,7 +57,9 @@ What lives where:
 | Project resources: APIs, network, firewall, NAT, load balancer, certificate, IAM, WIF, secret (without value), logging, monitoring | `infra/gcp/` (Terraform, applied by hand) |
 | Cloud Run service spec (image, scaling, VPC, env, probes) | `deploy/cloudrun/service.yaml` (applied by the deploy workflow) |
 | Egress firewall proof | `deploy/checks/egress_check.py`, `deploy/cloudrun/egress-check-job.yaml` |
-| Builds, deploys, rollback workflow | `.github/workflows/` |
+| Site Worker (static assets, `workers.dev` until the cutover) | `frontend/wrangler.jsonc` (applied by the deploy workflow) |
+| Builds, deploys, rollback workflow | `.github/workflows/ci.yml` (`deploy-api`, `deploy-site`), `.github/workflows/rollback-api.yml` |
+| Post-deploy smoke tests | `deploy/checks/api_smoke.sh`, `deploy/checks/site_smoke.sh` |
 | Billing, budget, state bucket, secret value, Cloudflare rules, GitHub settings | By hand, this file |
 
 ## Names
@@ -302,10 +305,20 @@ runs on `main` of the workflow files in `github_deploy_workflows`
 (`ci.yml` and `rollback-api.yml`). A new or renamed deploy workflow must be
 added there, and applied, before it can authenticate.
 
-Once the deploy jobs run in the `production` environment, also require it
-in Workload Identity Federation: set `github_require_environment = true` in
-`infra/gcp/terraform.tfvars` and run `terraform -chdir=infra/gcp apply`.
-Tokens from jobs outside that environment are then refused.
+The deploy jobs and the rollback workflow run in the `production`
+environment, so also require it in Workload Identity Federation: set
+`github_require_environment = true` in `infra/gcp/terraform.tfvars` and run
+`terraform -chdir=infra/gcp apply`. Tokens from jobs outside that
+environment are then refused. If the repository stays private on GitHub
+Free, delete the `environment:` blocks of `deploy-api` and `deploy-site` in
+`ci.yml` and of `rollback` in `rollback-api.yml` instead, keep
+`github_require_environment = false`, and set `CLOUDFLARE_API_TOKEN` as a
+repository secret.
+
+Each deploy job starts by checking the variables it needs and stops with an
+error naming the one that is missing or malformed. Unless `DEPLOY_API` or
+`DEPLOY_SITE` is `true` (GitHub compares without case), its job is skipped;
+with both unset or `false`, CI deploys nothing.
 
 ## First deploy and verification
 
@@ -317,11 +330,27 @@ gh workflow run ci.yml --ref main
 gh run watch
 ```
 
-Expected: the CI jobs, then `deploy-api`: build and push, replace the
-service (the first start can take 30 to 120 seconds because of Direct VPC
-egress), wait until `/` reports the new revision, smoke test. On failure the
-job moves traffic back to the previous revision; on the first deploy that is
-the placeholder, which is fine.
+Expected: the CI jobs, then `deploy-api`: build and push
+`europe-west1-docker.pkg.dev/PROJECT_ID/webriskaudit/api:COMMIT`, note the
+revision that serves now, replace the service with the image's digest (the
+first start can take 30 to 120 seconds because of Direct VPC egress), then
+`deploy/checks/api_smoke.sh`:
+
+- `GET /` reports the new commit as `revision` (retried for up to 6
+  minutes) and `docs` is `null`; `GET /health` is `ok`;
+- a CORS preflight from https://webriskaudit.com is allowed, one from
+  another origin is not;
+- one scan of webriskaudit.com returns a score, with the TLS certificate
+  and HTTPS redirect checks completed (outbound 443 and 80 through NAT);
+- a scan of `localhost` gets 422 `invalid-domain`;
+- the same scan sent straight to `API_LB_IP`, without Cloudflare's
+  `X-Origin-Auth`, gets 403 `forbidden`.
+
+A 429 (the API's or Cloudflare's rate limit; runners share addresses) is
+retried once after `Retry-After`. If any step after the deploy began fails,
+the job moves all traffic back to the noted revision and checks `/health`;
+on the first deploy that is the placeholder, which is fine. The job summary
+lists the new and the previous revision.
 
 Logs: Logs Explorer → Refine scope → **Log view** →
 `webriskaudit-logs/_AllLogs`, or
@@ -439,10 +468,21 @@ gh variable set DEPLOY_SITE --body true
 gh workflow run ci.yml --ref main
 ```
 
-On `https://webriskaudit-web.SUBDOMAIN.workers.dev`: pages, the 404 page and
-`/privacy-policy` load; `curl -sI` shows exactly one
-`content-security-policy` (with the API origin), `x-frame-options: DENY`,
-and no `access-control-allow-origin: *`. Scans fail there (CORS allows only
+`deploy-site` runs after `deploy-api` (also when that job was skipped). It
+builds the site with `NEXT_PUBLIC_API_URL`, refuses to deploy if the build
+does not contain that URL or `frontend/public/_headers` does not allow it in
+`connect-src`, runs `wrangler deploy` in `frontend/` (the Worker is created
+on the first deploy), and then runs `deploy/checks/site_smoke.sh` against
+the `workers.dev` URL that wrangler reports.
+
+The smoke test checks what to look for by hand on
+`https://webriskaudit-web.SUBDOMAIN.workers.dev`: `/` and `/privacy-policy`
+load with exactly one `content-security-policy` (with the API origin),
+`x-frame-options: DENY`, `x-content-type-options: nosniff`,
+`referrer-policy: strict-origin-when-cross-origin`, no
+`access-control-allow-origin: *` and no Google Tag Manager; a
+`/_next/static/` file is cached as immutable; an unknown path gets the 404
+page with status 404. Scans fail there (CORS allows only
 https://webriskaudit.com); that is expected.
 
 ## Cutover of webriskaudit.com
@@ -505,7 +545,15 @@ gcloud run services update-traffic webriskaudit-api --region europe-west1 \
   --to-revisions=REVISION=100
 ```
 
-The rollback workflow does the same through Workload Identity Federation.
+The rollback workflow does the same through Workload Identity Federation,
+and then waits for `/health`:
+
+```bash
+gh workflow run rollback-api.yml --ref main -f revision=REVISION
+```
+
+It shares a concurrency group with the deploy job, so a rollback waits for
+a running deploy and the other way round.
 The next deploy sets traffic back to the latest revision. Artifact Registry
 keeps the 10 most recent images (and anything younger than 30 days), so
 older revisions may no longer be able to start.
@@ -593,7 +641,9 @@ Cloud Run `instance_count` (always 1), startup latency and liveness
 restarts, the 429 rate, `dns-unavailable` and `inconclusive` results in the
 logs, NAT errors, daily cost, certificate state, and whether the request-log
 exclusion still holds. Monthly: uptime history, the bill, the Dependabot
-queue, `terraform plan`, Error Reporting.
+queue, `terraform plan`, Error Reporting. Every three months: the
+`wranglerVersion` input of the `deploy-site` job, which Dependabot does not
+update (it does update the actions' commit pins).
 
 ## Costs
 
@@ -671,6 +721,15 @@ Check these during the first deploy and update this file:
 - The Cloudflare token permissions for `wrangler deploy`, zone HSTS versus
   `_headers` HSTS, whether `www` exists, the zone's plan and current SSL
   mode (only visible in the dashboard).
+- The deploy jobs have not run yet. Tested without credentials:
+  `wrangler deploy --dry-run` and `wrangler dev` with `frontend/wrangler.jsonc`
+  (wrangler 4.151.1, installed with `pnpm add` as `wrangler-action` does;
+  `_headers`, the 404 page and the `.html` redirects behave as described),
+  the site smoke test against `wrangler dev`, and the API smoke test against
+  the API run locally behind a stand-in for Cloudflare. Not tested: Workload
+  Identity Federation, the image push, `services replace`, the automatic
+  rollback, and whether a skipped `deploy-api` lets `deploy-site` run as
+  intended.
 - Answered from documentation since the plan was written: probes always
   get CPU, also with request-based billing; uptime checks support POST
   bodies, so a synthetic scan check could be added later.
