@@ -71,5 +71,8 @@ ENV WEBRISKAUDIT_REVISION="${REVISION}"
 # after SIGTERM). X-Forwarded-For is never trusted (--no-proxy-headers):
 # behind a proxy, the client address comes from CLIENT_IP_HEADER with origin
 # authentication (docs/adr/0006-client-ip-behind-cloudflare.md). The access
-# log is off because it records client addresses.
-CMD ["/bin/sh", "-c", "exec uvicorn webriskaudit.api:app --host 0.0.0.0 --port \"${PORT:-8000}\" --workers 1 --no-proxy-headers --no-access-log --timeout-graceful-shutdown \"${GRACEFUL_SHUTDOWN_SECONDS:-8}\""]
+# log is off because it records client addresses. WebSocket support is off
+# (--ws none) because no route uses it and uvicorn logs the client address
+# and raw path of every WebSocket handshake; an upgrade request is then
+# handled as plain HTTP, so origin authentication refuses it.
+CMD ["/bin/sh", "-c", "exec uvicorn webriskaudit.api:app --host 0.0.0.0 --port \"${PORT:-8000}\" --workers 1 --no-proxy-headers --ws none --no-access-log --timeout-graceful-shutdown \"${GRACEFUL_SHUTDOWN_SECONDS:-8}\""]
