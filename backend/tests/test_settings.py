@@ -68,6 +68,56 @@ def test_invalid_values_are_refused(name: str, value: str) -> None:
         Settings.from_env({name: value})
 
 
+SECRET = "s" * 32
+HEADER = "CF-Connecting-IP"
+
+
+def test_origin_auth_is_off_by_default() -> None:
+    settings = Settings()
+    assert (settings.origin_auth_enabled, settings.client_ip_header) == (False, None)
+
+
+def test_origin_auth_from_environment() -> None:
+    settings = Settings.from_env(
+        {"ORIGIN_AUTH_SECRETS": f" {SECRET} , {'n' * 64} ,", "CLIENT_IP_HEADER": f" {HEADER} "}
+    )
+    assert settings.origin_auth_secrets == (SECRET, "n" * 64)
+    assert settings.client_ip_header == HEADER
+    assert settings.origin_auth_enabled
+    assert SECRET not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    ("env", "message"),
+    [
+        (
+            {"ORIGIN_AUTH_SECRETS": "s" * 31, "CLIENT_IP_HEADER": HEADER},
+            "entry 1 must be at least 32",
+        ),
+        ({"ORIGIN_AUTH_SECRETS": f"{SECRET},{'t' * 8}", "CLIENT_IP_HEADER": HEADER}, "entry 2"),
+        ({"ORIGIN_AUTH_SECRETS": "s" * 16 + " " + "s" * 16, "CLIENT_IP_HEADER": HEADER}, "entry 1"),
+        ({"ORIGIN_AUTH_SECRETS": "ş" * 32, "CLIENT_IP_HEADER": HEADER}, "entry 1"),
+        ({"ORIGIN_AUTH_SECRETS": SECRET}, "ORIGIN_AUTH_SECRETS needs CLIENT_IP_HEADER"),
+        ({"ORIGIN_AUTH_SECRETS": SECRET, "CLIENT_IP_HEADER": " "}, "needs CLIENT_IP_HEADER"),
+        ({"CLIENT_IP_HEADER": HEADER}, "CLIENT_IP_HEADER needs ORIGIN_AUTH_SECRETS"),
+        ({"ORIGIN_AUTH_SECRETS": SECRET, "CLIENT_IP_HEADER": "CF Connecting IP"}, "header name"),
+        ({"ORIGIN_AUTH_SECRETS": SECRET, "CLIENT_IP_HEADER": "CF-Connecting-IP:"}, "header name"),
+    ],
+)
+def test_invalid_origin_auth_is_refused(env: dict[str, str], message: str) -> None:
+    with pytest.raises(SettingsError, match=message) as error:
+        Settings.from_env(env)
+    assert "sss" not in str(error.value)  # the message never contains a secret
+    assert "ttt" not in str(error.value)
+
+
+def test_origin_auth_is_checked_when_built_directly() -> None:
+    with pytest.raises(SettingsError, match="entry 1"):
+        Settings(origin_auth_secrets=("short",), client_ip_header=HEADER)
+    with pytest.raises(SettingsError, match="needs ORIGIN_AUTH_SECRETS"):
+        Settings(client_ip_header=HEADER)
+
+
 def test_json_formatter_merges_fields_and_exceptions() -> None:
     record = logging.LogRecord("webriskaudit.api", logging.INFO, __file__, 1, "scan", (), None)
     record.fields = {"domain": "example.com", "score": 87}

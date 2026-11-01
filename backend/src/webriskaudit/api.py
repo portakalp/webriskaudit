@@ -6,14 +6,21 @@ overall rate limits on new scans, a short-lived report cache that also
 coalesces concurrent scans of one domain, and a cap on scans running or
 waiting for a slot, with a time limit on the wait.
 
+Behind a proxy, origin authentication (``ORIGIN_AUTH_SECRETS``) refuses
+requests that did not pass through it, and the client address for the rate
+limits comes from the proxy's header (``CLIENT_IP_HEADER``). Without it, the
+client is the TCP peer; ``X-Forwarded-For`` is never read.
+
 Run with ``uvicorn webriskaudit.api:app``.
 """
 
 import asyncio
+import hmac
+import ipaddress
 import logging
 import math
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -55,6 +62,10 @@ BUSY_RETRY_AFTER = 10
 """Seconds a client is asked to wait when the scanner has no room for a new scan."""
 RUNNING_RETRY_AFTER = 5
 """Seconds a client is asked to wait while its previous new scan is still running."""
+ORIGIN_AUTH_HEADER = "X-Origin-Auth"
+"""Header in which the proxy in front of the API sends the shared secret."""
+OPEN_ROUTES = frozenset({("GET", "/health"), ("GET", "/")})
+"""Answered without origin authentication; the platform's health checks call /health directly."""
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +155,14 @@ def _retry_after_doc(description: str) -> dict[str, Any]:
 
 
 _SCAN_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: _problem_doc(
+        "The proxy in front of the API passed no valid client address (invalid-client-ip). "
+        "Only with origin authentication on."
+    ),
+    403: _problem_doc(
+        "The request did not come through the proxy in front of the API (forbidden). Only "
+        "with origin authentication on, and for every route except GET / and GET /health."
+    ),
     413: _problem_doc(
         f"The request body is larger than {MAX_BODY_BYTES} bytes (request-too-large)."
     ),
@@ -371,6 +390,74 @@ def _content_length(scope: Scope) -> int:
     return 0
 
 
+# --- Origin authentication -------------------------------------------------------
+
+
+class OriginAuth:
+    """Answers 403 unless the request carries one of ``secrets`` in X-Origin-Auth.
+
+    The proxy in front of the API adds the header to every request it
+    forwards, so a request that reaches the API another way, such as straight
+    to its load balancer, is refused before anything else reads it. Only
+    ``OPEN_ROUTES`` are exempt. More than one secret allows a rotation; each
+    is compared in constant time.
+    """
+
+    def __init__(self, app: ASGIApp, secrets: Sequence[str]) -> None:
+        self.app = app
+        self._secrets = tuple(secret.encode() for secret in secrets)
+        self._header = ORIGIN_AUTH_HEADER.lower().encode()
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] != "http"
+            or (scope["method"], scope["path"]) in OPEN_ROUTES
+            or self._authenticated(scope)
+        ):
+            await self.app(scope, receive, send)
+            return
+        response = problem_response(
+            403,
+            PROBLEM_BASE + "forbidden",
+            "Forbidden",
+            "Requests must reach this API through its public address.",
+        )
+        await response(scope, receive, send)
+
+    def _authenticated(self, scope: Scope) -> bool:
+        values = [value for name, value in scope["headers"] if name.lower() == self._header]
+        if len(values) != 1:
+            return False
+        matched = False
+        for secret in self._secrets:
+            matched |= hmac.compare_digest(values[0], secret)
+        return matched
+
+
+def client_address(request: Request, header: str | None) -> tuple[str, str]:
+    """The client's address and its source: ``header`` (set by the proxy) or the TCP peer.
+
+    ``header`` is only given with origin authentication, which guarantees
+    the proxy set it. Raises a 400 problem when it is missing, repeated or
+    not an IP address.
+    """
+    if header is None:
+        return (request.client.host if request.client else "unknown"), "peer"
+    values = request.headers.getlist(header)
+    try:
+        address = ipaddress.ip_address(values[0].strip()) if len(values) == 1 else None
+    except ValueError:
+        address = None
+    if address is None:
+        raise ProblemError(
+            400,
+            "invalid-client-ip",
+            "Invalid client address",
+            "The proxy in front of the API did not pass a valid client address.",
+        )
+    return str(address), "header"
+
+
 # --- Application -----------------------------------------------------------------
 
 
@@ -388,11 +475,6 @@ class _Api(FastAPI):
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     yield
-
-
-def _client_ip(request: Request) -> str:
-    # Behind a reverse proxy, uvicorn --proxy-headers puts the real client here.
-    return request.client.host if request.client else "unknown"
 
 
 async def _until_disconnected(request: Request) -> None:
@@ -456,6 +538,9 @@ def create_app(*, settings: Settings | None = None, scan: ScanFn | None = None) 
         allow_headers=["Content-Type"],
         expose_headers=["Retry-After"],
     )
+    if settings.origin_auth_enabled:
+        # Added last, so it runs first: nothing else sees an unauthenticated request.
+        app.add_middleware(OriginAuth, secrets=settings.origin_auth_secrets)
     _add_problem_handlers(app)
 
     @app.get("/", response_model=ServiceInfo, summary="Service information")
@@ -478,11 +563,10 @@ def create_app(*, settings: Settings | None = None, scan: ScanFn | None = None) 
         outcome = "cancelled"
         fields: dict[str, object] = {}
         try:
+            client, fields["client_ip_source"] = client_address(request, settings.client_ip_header)
             domain = _normalize(body.domain)
             fields["domain"] = domain
-            report, source = await _unless_disconnected(
-                request, _report(service, domain, _client_ip(request))
-            )
+            report, source = await _unless_disconnected(request, _report(service, domain, client))
             fields |= {
                 "cache": source,
                 "score": report.score,

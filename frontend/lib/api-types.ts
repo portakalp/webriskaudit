@@ -300,6 +300,24 @@ export interface operations {
                     "application/json": components["schemas"]["ScanReport"];
                 };
             };
+            /** @description The proxy in front of the API passed no valid client address (invalid-client-ip). Only with origin authentication on. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The request did not come through the proxy in front of the API (forbidden). Only with origin authentication on, and for every route except GET / and GET /health. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description The request body is larger than 8192 bytes (request-too-large). */
             413: {
                 headers: {
