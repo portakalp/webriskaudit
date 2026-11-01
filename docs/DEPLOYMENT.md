@@ -347,10 +347,15 @@ first start can take 30 to 120 seconds because of Direct VPC egress), then
   `X-Origin-Auth`, gets 403 `forbidden`.
 
 A 429 (the API's or Cloudflare's rate limit; runners share addresses) is
-retried once after `Retry-After`. If any step after the deploy began fails,
-the job moves all traffic back to the noted revision and checks `/health`;
-on the first deploy that is the placeholder, which is fine. The job summary
-lists the new and the previous revision.
+retried once after `Retry-After`. If any step from the deploy on fails, or
+the job is cancelled or times out after the deploy began, the job moves all
+traffic back to the noted revision and waits up to 4 minutes for `/health`;
+on the first deploy that is the placeholder, which is fine. The deploy step
+may take 10 minutes and the smoke test 20; past that they fail, so the
+rollback runs well within the job's 50-minute limit. After a cancel GitHub
+gives the job about 5 more minutes: enough to move the traffic, though the
+`/health` wait may be cut short. The job summary lists the new and the
+previous revision.
 
 Logs: Logs Explorer → Refine scope → **Log view** →
 `webriskaudit-logs/_AllLogs`, or
@@ -728,8 +733,8 @@ Check these during the first deploy and update this file:
   the site smoke test against `wrangler dev`, and the API smoke test against
   the API run locally behind a stand-in for Cloudflare. Not tested: Workload
   Identity Federation, the image push, `services replace`, the automatic
-  rollback, and whether a skipped `deploy-api` lets `deploy-site` run as
-  intended.
+  rollback (also after a cancel or a job timeout), and whether a skipped
+  `deploy-api` lets `deploy-site` run as intended.
 - Answered from documentation since the plan was written: probes always
   get CPU, also with request-based billing; uptime checks support POST
   bodies, so a synthetic scan check could be added later.

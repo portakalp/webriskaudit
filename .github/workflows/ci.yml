@@ -154,9 +154,10 @@ jobs:
 
   # Builds the API image, replaces the Cloud Run service with
   # deploy/cloudrun/service.yaml and smoke-tests it through Cloudflare; on
-  # failure, traffic goes back to the revision that served before. Runs only
-  # when the repository variable DEPLOY_API is "true", for pushes to main and
-  # manual runs on main, after every CI job has passed (docs/DEPLOYMENT.md).
+  # failure or cancel, traffic goes back to the revision that served before.
+  # Runs only when the repository variable DEPLOY_API is "true", for pushes to
+  # main and manual runs on main, after every CI job has passed
+  # (docs/DEPLOYMENT.md).
   deploy-api:
     name: Deploy API (Cloud Run)
     needs: [frontend, backend, docker, audit, terraform, secrets]
@@ -164,7 +165,9 @@ jobs:
       vars.DEPLOY_API == 'true' && github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The deploy and smoke test steps have their own limits, so a slow one
+    # fails well before this and the rollback step still has time to run.
+    timeout-minutes: 50
     environment:
       name: production
       url: https://api.webriskaudit.com/
@@ -263,33 +266,39 @@ jobs:
       # gcloud run services replace; it returns once the new revision is ready.
       - id: deploy
         uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
+        timeout-minutes: 10
         with:
           metadata: ${{ runner.temp }}/service.yaml
           project_id: ${{ vars.GCP_PROJECT_ID }}
           region: europe-west1
       - name: Smoke test
+        timeout-minutes: 20
         env:
           EXPECTED_REVISION: ${{ github.sha }}
         run: deploy/checks/api_smoke.sh
+      # Also runs when the job is cancelled or times out once the deploy step
+      # has started. GitHub then allows about 5 minutes, so traffic moves first.
       - name: Roll back to the previous revision
         if: >-
-          failure() && steps.previous.outputs.revision != '' &&
-          (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure')
+          (failure() || cancelled()) && steps.previous.outputs.revision != '' &&
+          (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure' ||
+          steps.deploy.outcome == 'cancelled')
+        timeout-minutes: 7
         env:
           PREVIOUS: ${{ steps.previous.outputs.revision }}
         run: |
           gcloud run services update-traffic "$SERVICE" --region "$REGION" --project "$PROJECT_ID" \
             --to-revisions="${PREVIOUS}=100"
           # The rolled-back revision's instance may need a few minutes to start.
-          for _ in $(seq 30); do
-            if curl -fsS --max-time 10 "$API_URL/health" | jq -e '.status == "ok"' > /dev/null; then
-              echo "::error::The deploy of ${GITHUB_SHA} failed; all traffic is back on ${PREVIOUS}."
-              exit 0
+          deadline=$((SECONDS + 240))
+          until curl -fsS --max-time 10 "$API_URL/health" | jq -e '.status == "ok"' > /dev/null; do
+            if ((SECONDS >= deadline)); then
+              echo "::error::Traffic is back on ${PREVIOUS}, but ${API_URL}/health still fails."
+              exit 1
             fi
             sleep 10
           done
-          echo "::error::Traffic is back on ${PREVIOUS}, but ${API_URL}/health still fails."
-          exit 1
+          echo "::error::The deploy of ${GITHUB_SHA} did not pass; all traffic is back on ${PREVIOUS}."
       - name: Summary
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
