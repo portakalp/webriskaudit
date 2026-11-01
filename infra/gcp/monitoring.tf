@@ -18,16 +18,18 @@ locals {
       host         = var.api_hostname
       path         = "/health"
       # The expected value of a JSON string includes its quotes.
-      json_path = "$.status"
-      content   = "\"ok\""
+      json_path     = "$.status"
+      content       = "\"ok\""
+      alert_enabled = var.api_alert_enabled
     }
     # Status only: the page content changes at the cutover to the new site.
     site-home = {
-      display_name = "Website home page"
-      host         = var.site_hostname
-      path         = "/"
-      json_path    = null
-      content      = null
+      display_name  = "Website home page"
+      host          = var.site_hostname
+      path          = "/"
+      json_path     = null
+      content       = null
+      alert_enabled = true
     }
   }
 }
@@ -75,6 +77,7 @@ resource "google_monitoring_alert_policy" "uptime" {
   for_each = local.uptime_checks
 
   display_name          = "WebRiskAudit ${each.value.display_name} is failing"
+  enabled               = each.value.alert_enabled
   combiner              = "OR"
   severity              = "CRITICAL"
   notification_channels = [google_monitoring_notification_channel.email.id]

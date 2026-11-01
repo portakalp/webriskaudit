@@ -9,6 +9,10 @@ alert_email = "you@example.com"
 # github_repository_id = "1441833024" # gh api repos/portakalp/webriskaudit --jq .id
 # dns_resolvers        = ["1.1.1.1", "9.9.9.10"]
 
+# Switch on after the first deploy, once the API /health check passes
+# (docs/DEPLOYMENT.md, checklist step 10).
+# api_alert_enabled = true
+
 # Switch on once the deploy jobs use the GitHub environment (public repository).
 # github_require_environment = true
 # github_environment         = "production"
