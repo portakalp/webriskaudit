@@ -710,9 +710,6 @@ Check these during the first deploy and update this file:
 - Start-up time of an instance with Direct VPC egress and Cloud NAT
   (Google: "30 seconds or more"); whether a platform restart starts the new
   instance before the old one stops. The startup probe allows 180 s.
-- Whether the network tag in `run.googleapis.com/network-interfaces` is
-  accepted as a string (`"tags":"webriskaudit-api"`, the form Google's
-  service YAML example uses); `gcloud run services describe` should show it.
 - Whether `roles/run.developer` on the service alone lets the deployer set
   Direct VPC egress. If the deploy fails with a `compute.subnetworks.use`
   permission error, grant the deployer `roles/compute.networkUser` on the

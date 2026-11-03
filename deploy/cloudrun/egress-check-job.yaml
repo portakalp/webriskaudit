@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        run.googleapis.com/network-interfaces: '[{"network":"webriskaudit","subnetwork":"webriskaudit-euw1","tags":"webriskaudit-api"}]'
+        run.googleapis.com/network-interfaces: '[{"network":"webriskaudit","subnetwork":"webriskaudit-euw1","tags":["webriskaudit-api"]}]'
         run.googleapis.com/vpc-access-egress: all-traffic
     spec:
       taskCount: 1

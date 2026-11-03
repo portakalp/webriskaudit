@@ -26,8 +26,9 @@ spec:
         run.googleapis.com/cpu-throttling: "true"
         run.googleapis.com/startup-cpu-boost: "true"
         # Direct VPC egress: all outbound traffic goes through the VPC, where
-        # the egress firewall (network tag) and Cloud NAT apply.
-        run.googleapis.com/network-interfaces: '[{"network":"webriskaudit","subnetwork":"webriskaudit-euw1","tags":"webriskaudit-api"}]'
+        # the egress firewall (network tag) and Cloud NAT apply. "tags" must be
+        # a list: Cloud Run rejects a string with INVALID_ARGUMENT.
+        run.googleapis.com/network-interfaces: '[{"network":"webriskaudit","subnetwork":"webriskaudit-euw1","tags":["webriskaudit-api"]}]'
         run.googleapis.com/vpc-access-egress: all-traffic
     spec:
       containerConcurrency: 40
