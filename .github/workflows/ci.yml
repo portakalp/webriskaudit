@@ -333,7 +333,7 @@ jobs:
     timeout-minutes: 20
     environment:
       name: production
-      url: ${{ steps.deploy.outputs.deployment-url }}
+      url: https://webriskaudit.com/
     permissions:
       contents: read
     concurrency:
@@ -400,8 +400,10 @@ jobs:
           packageManager: pnpm
           workingDirectory: frontend
           command: deploy
+      # The site has only its custom domain (workers_dev is off), and wrangler
+      # reports no URL for it, so the smoke test uses the domain directly.
       - name: Smoke test
         env:
-          SITE_URL: ${{ steps.deploy.outputs.deployment-url }}
+          SITE_URL: https://webriskaudit.com
           API_ORIGIN: ${{ vars.NEXT_PUBLIC_API_URL }}
         run: ../deploy/checks/site_smoke.sh

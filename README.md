@@ -6,16 +6,12 @@ HTTP security headers, scored out of 100. Every verdict comes with the
 evidence it was based on, how to fix it, and references to the standard
 behind it.
 
-> **Status: v2 rebuild in progress.** v1 was a commercial MVP. This repository
-> is being rebuilt in the open as a non-commercial project. The v2 scanner
-> engine, the API, the website's v2 report view and the
-> [deployment](#deployment) setup are in place; going live is the next step.
-> See [Project history](#project-history), the
-> [known limitations](#known-limitations) and the [roadmap](#roadmap).
+Live site: https://webriskaudit.com, with the API at
+https://api.webriskaudit.com ([Deployment](#deployment)).
 
-Live site: https://webriskaudit.com. Until the v2 cutover
-([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), "Cutover of webriskaudit.com")
-it still serves the v1 site, whose scanner API is offline.
+v1 was a commercial MVP; v2 is a non-commercial, open-source rebuild. See
+[Project history](#project-history), the
+[known limitations](#known-limitations) and the [roadmap](#roadmap).
 
 ## What it checks
 
@@ -373,7 +369,6 @@ errors for up to 30 days in Error Reporting (see [Deployment](#deployment)).
 
 ## Roadmap
 
-- Deploy v2: the static site, and the API at `api.webriskaudit.com`
 - A hash-based Content Security Policy for the site, without
   `'unsafe-inline'` in `script-src`
 - Narrow the known limitations where it can be done passively, starting with

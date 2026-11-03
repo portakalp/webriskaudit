@@ -13,9 +13,12 @@
     // /privacy-policy serves privacy-policy.html; /privacy-policy.html redirects there.
     "html_handling": "auto-trailing-slash"
   },
-  // Served on webriskaudit-web.<subdomain>.workers.dev until the cutover adds
-  // the webriskaudit.com custom domain (docs/DEPLOYMENT.md).
-  "workers_dev": true,
+  // The site's own domain. Wrangler creates the DNS record and certificate;
+  // the hostname must have no other DNS record (docs/DEPLOYMENT.md, cutover).
+  "routes": [{ "pattern": "webriskaudit.com", "custom_domain": true }],
+  // No second copy on webriskaudit-web.<subdomain>.workers.dev, where scans
+  // would fail anyway: the API's CORS allows only https://webriskaudit.com.
+  "workers_dev": false,
   // No public URLs for individual versions.
   "preview_urls": false,
   // Wrangler sends no usage data from this project.
