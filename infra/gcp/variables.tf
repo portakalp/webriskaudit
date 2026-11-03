@@ -45,7 +45,7 @@ variable "alert_email" {
 variable "github_repository_id" {
   description = "Numeric ID of the GitHub repository allowed to deploy (gh api repos/OWNER/REPO --jq .id)."
   type        = string
-  default     = "1441833024"
+  default     = "1444080877"
 
   validation {
     condition     = can(regex("^[0-9]+$", var.github_repository_id))

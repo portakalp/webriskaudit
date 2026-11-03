@@ -13,7 +13,7 @@ run "defaults" {
 
   assert {
     condition = google_iam_workload_identity_pool_provider.github.attribute_condition == join(" && ", [
-      "assertion.repository_id == '1441833024'",
+      "assertion.repository_id == '1444080877'",
       "assertion.ref == 'refs/heads/main'",
       "(assertion.event_name == 'push' || assertion.event_name == 'workflow_dispatch')",
       "(assertion.workflow_ref == 'portakalp/webriskaudit/.github/workflows/ci.yml@refs/heads/main' || assertion.workflow_ref == 'portakalp/webriskaudit/.github/workflows/rollback-api.yml@refs/heads/main')",
