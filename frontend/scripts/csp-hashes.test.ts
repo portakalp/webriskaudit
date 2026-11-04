@@ -46,6 +46,7 @@ describe("inlineScripts", () => {
       <script type=" TEXT/JavaScript ">e()</script>
       <script type="importmap">{"imports":{}}</script>
       <script type="speculationrules">{"prefetch":[]}</script>
+      <script type="webbundle">{"source":"/a.wbn"}</script>
     `)
 
     expect(inlineScripts(html)).toEqual([
@@ -56,6 +57,7 @@ describe("inlineScripts", () => {
       "e()",
       '{"imports":{}}',
       '{"prefetch":[]}',
+      '{"source":"/a.wbn"}',
     ])
   })
 

@@ -50,12 +50,19 @@ const SCRIPT_TYPES = new Set([
   "text/livescript",
   "text/x-ecmascript",
   "text/x-javascript",
+  "webbundle", // Not in the HTML standard, but Chrome checks it against script-src.
 ])
 
 /**
  * The text of each inline script of a page that a browser checks against
- * script-src. It comes from an HTML parser, so it is the text a browser hashes:
- * line endings normalized, entities left alone, ended where a browser ends it.
+ * script-src. It comes from an HTML parser, so line endings are normalized,
+ * entities left alone and a script ended where a browser ends it.
+ *
+ * It differs from a browser on markup the export does not have. JSDOM parses
+ * with scripting off, so <noscript> content counts as markup, and this does not
+ * see into declarative shadow roots or srcdoc frames. An SVG script with child
+ * elements gets the wrong text. A script added at run time, such as an inline
+ * next/script, is not in the HTML at all, so it has no hash and is blocked.
  *
  * @param {string} html
  * @returns {string[]}
