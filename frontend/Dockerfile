@@ -28,11 +28,12 @@ ARG NEXT_PUBLIC_API_URL=https://api.webriskaudit.com
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 # _headers is for Workers static assets; nginx.conf sends those headers here.
+# The build also writes .next/nginx.conf, with the CSP's script hashes filled in.
 RUN pnpm build && rm -f out/_headers
 
 # Let the CSP's connect-src allow the API origin baked into the build.
 RUN api_origin="$(node -p 'const u = process.env.NEXT_PUBLIC_API_URL; u ? new URL(u).origin : ""')" \
-    && sed "s|\${API_ORIGIN}|${api_origin}|" nginx.conf > nginx.rendered.conf
+    && sed "s|\${API_ORIGIN}|${api_origin}|" .next/nginx.conf > nginx.rendered.conf
 
 # --- Runtime: nginx as an unprivileged user ----------------------------------
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine-slim@sha256:5d8bb9437d74a600ec5dbf90c035451c724dc33eac8d3a71078f6f8612c345f6 AS runtime

@@ -5,9 +5,10 @@
 # nginx.conf sends the same security headers in the Docker image; keep the
 # two files in sync.
 #
-# script-src needs 'unsafe-inline' because the Next.js static export inlines
-# its bootstrap scripts and static hosting cannot add a per-request nonce.
-# A hash-based policy is future work.
+# script-src lists a hash of each inline script of the Next.js static export,
+# because static hosting cannot add a per-request nonce. The hashes change with
+# every build, so "pnpm build" fills in the SCRIPT_HASHES placeholder
+# (scripts/csp-hashes.mjs) and only out/_headers is complete.
 #
 # connect-src must allow NEXT_PUBLIC_API_URL, the repository variable the
 # deploy workflow builds with (https://api.webriskaudit.com); change the two
@@ -20,7 +21,7 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=()
   Cross-Origin-Opener-Policy: same-origin
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.webriskaudit.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self' ${SCRIPT_HASHES}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.webriskaudit.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests
 
 # Build assets have content-hashed names and never change.
 /_next/static/*
