@@ -2,7 +2,7 @@
 # Smoke test of the deployed site, run by the deploy-site job in
 # .github/workflows/ci.yml after each deploy. By hand:
 #
-#   SITE_URL=https://webriskaudit-web.SUBDOMAIN.workers.dev \
+#   SITE_URL=https://webriskaudit.com \
 #   API_ORIGIN=https://api.webriskaudit.com deploy/checks/site_smoke.sh
 #
 # Checks pages, the 404 page, the headers from frontend/public/_headers and
@@ -10,7 +10,7 @@
 # Needs curl 7.83 or later, jq and Node.js.
 set -euo pipefail
 
-: "${SITE_URL:?the deployed site, such as https://webriskaudit-web.SUBDOMAIN.workers.dev}"
+: "${SITE_URL:?the deployed site, such as https://webriskaudit.com}"
 : "${API_ORIGIN:?the API origin the CSP must allow, such as https://api.webriskaudit.com}"
 
 SITE_URL=${SITE_URL%/}

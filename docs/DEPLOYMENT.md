@@ -263,9 +263,17 @@ i. **Rate limit** (the Free plan allows one rule, path only, IP-based,
    requests, so one scan from a browser counts twice. The API's own limits
    (10 scans per 10 minutes per client) are the real control.
 
-j. **Bot Fight Mode: Off** (Security → Bots, whole zone). It can challenge
-   API calls, cannot be skipped by a WAF rule, and sets the `__cf_bm`
-   cookie, which contradicts the privacy note's "no cookies".
+j. **Bot Fight Mode: Off** (Security → Settings, filter "Bot traffic",
+   whole zone). It can challenge API calls, cannot be skipped by a WAF rule,
+   and sets the `__cf_bm` cookie, which contradicts the privacy note's "no
+   cookies". It also turns on JavaScript Detections, which cannot be turned
+   off on its own: an inline script with the request's ray ID in every
+   HTML response. That script has a different hash on every request, so the
+   site's CSP blocks it and the site smoke test fails. To check, this must
+   print 0:
+   ```sh
+   curl -s https://webriskaudit.com/ | grep -c challenge-platform
+   ```
 
 k. **Client address.** Network → **Pseudo IPv4: Off** (its "Overwrite
    Headers" mode replaces IPv6 addresses in `CF-Connecting-IP` and breaks
@@ -515,8 +523,9 @@ production and preview deployments are off. In one session at a quiet hour
 2. Rules → Settings → Managed Transforms → **Add security headers: Off** (it overrides
    the site's `X-Frame-Options` and `Referrer-Policy` and adds `Expect-CT`
    and `X-XSS-Protection`).
-3. Turn off everything that injects scripts: Rocket Loader, Zaraz, Web
-   Analytics automatic setup/RUM, Email Obfuscation. `script-src` allows
+3. Turn off everything that injects scripts: Bot Fight Mode (step 6j),
+   Rocket Loader, Zaraz, Web Analytics automatic setup/RUM, Email
+   Obfuscation. `script-src` allows
    same-origin script files and, by hash, the inline scripts of the build,
    so the browser blocks inline scripts and other-origin scripts added at
    the edge. Same-origin scripts, such as those under `/cdn-cgi/`, still
