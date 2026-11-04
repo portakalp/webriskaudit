@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="frontend/public/icon.png" alt="WebRiskAudit logo" width="88">
+<img src="docs/images/logo.png" alt="WebRiskAudit logo" width="96">
 
 # WebRiskAudit
 
