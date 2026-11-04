@@ -22,7 +22,7 @@ security headers, scored out of 100, with an explanation of every verdict.
 </div>
 
 <p align="center">
-  <img src="docs/images/report.png" alt="A WebRiskAudit report for webriskaudit.com: grade A, 94 out of 100, with a score per category and a list of checks" width="880">
+  <img src="docs/images/report.png" alt="A WebRiskAudit report for webriskaudit.com: grade A, 100 out of 100, with a score per category and a list of checks" width="880">
 </p>
 
 ## What it does
@@ -57,11 +57,12 @@ Four ideas shape how it works:
 
 ## See it in action
 
-Open a check to see its evidence, how to fix a problem and references. This
-is the site's own report, including the one warning it still has:
+Open a check to see its evidence and references; a check that does not pass
+also says how to fix the problem. This is the site's own Content Security
+Policy, with a hash for each inline script:
 
 <p align="center">
-  <img src="docs/images/check-details.png" alt="An opened check: Content Security Policy with a warning, showing the policy as evidence, how to fix it, and references to MDN, W3C and OWASP" width="760">
+  <img src="docs/images/check-details.png" alt="An opened check: Content Security Policy passes, showing the policy with its script hashes as evidence, and references" width="760">
 </p>
 
 Try it at **[webriskaudit.com](https://webriskaudit.com)**. Only scan domains
@@ -82,7 +83,7 @@ curl -s -X POST https://api.webriskaudit.com/api/v1/scan \
 ```json
 {
   "domain": "webriskaudit.com",
-  "score": 94,
+  "score": 100,
   "grade": "A",
   "coverage": { "scored": 12, "inconclusive": 0, "total": 12 }
 }
@@ -195,6 +196,11 @@ slot.
   second DNS answer cannot redirect it.
   [The threat model](docs/THREAT_MODEL.md) covers this and the rest of the
   scanner's defences.
+- **A strict Content Security Policy on a static site.** A static export
+  cannot add a per-request nonce, so the build hashes each inline script into
+  `script-src`, which has no `'unsafe-inline'`. The build fails rather than
+  ship a policy that would break the site, and the smoke test hashes the
+  pages as they are served, so a script changed at the edge is caught too.
 - **Abuse controls.** Per-client and global rate limits, one running scan per
   client, a bounded queue, a request size limit, a report cache and shared
   scans for concurrent requests.
@@ -536,8 +542,6 @@ An automated, outside view has limits, and the report says so where it can.
 
 ## Roadmap
 
-- A hash-based Content Security Policy for the site, without
-  `'unsafe-inline'` in `script-src`
 - Narrow the known limitations where it can be done passively, starting with
   expanding SPF includes to count nested lookups
 

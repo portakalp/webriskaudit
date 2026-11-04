@@ -123,7 +123,8 @@ Examples:
 
 - webriskaudit.com on 1 November 2026: 11 scored checks pass and
   `headers.csp` (weight 10) warns, so 85 of 90 points: score 94, grade A. The
-  headers category has 30 of 35 points: 86.
+  headers category has 30 of 35 points: 86. Since then the site's policy uses
+  script hashes, and all 12 checks pass: score 100.
 - A mail-only domain without A/AAAA records: only the email checks (25 of 90
   points) complete, so there is no overall score; the email category is still
   scored.
