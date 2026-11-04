@@ -266,11 +266,14 @@ i. **Rate limit** (the Free plan allows one rule, path only, IP-based,
 j. **Bot Fight Mode: Off** (Security → Settings, filter "Bot traffic",
    whole zone). It can challenge API calls, cannot be skipped by a WAF rule,
    and sets the `__cf_bm` cookie, which contradicts the privacy note's "no
-   cookies". It also turns on JavaScript Detections, which cannot be turned
-   off on its own: an inline script with the request's ray ID in every
-   HTML response. That script has a different hash on every request, so the
-   site's CSP blocks it and the site smoke test fails. To check, this must
-   print 0:
+   cookies".
+
+   JavaScript Detections stayed on after this, and this zone's dashboard has
+   no switch for it. It adds an inline script with the request's ray ID to
+   HTML responses, so the script's hash differs on every request and the
+   site's CSP would block it. `frontend/public/_headers` therefore sends
+   `Cache-Control: no-transform`, which stops the injection. To check, this
+   must print 0:
    ```sh
    curl -s https://webriskaudit.com/ | grep -c challenge-platform
    ```

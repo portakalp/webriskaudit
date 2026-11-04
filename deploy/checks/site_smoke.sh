@@ -68,6 +68,7 @@ check_page() {
     and .["x-content-type-options"] == ["nosniff"]
     and .["referrer-policy"] == ["strict-origin-when-cross-origin"]
     and ((.["access-control-allow-origin"] // []) | index("*") == null)
+    and ((.["cache-control"] // []) | length == 1 and (.[0] | contains("no-transform")))
   ' <<< "$HEADERS" > /dev/null || fail "GET $path: unexpected headers: $(jq -c . <<< "$HEADERS")"
   # Only script-src: style-src keeps 'unsafe-inline'.
   jq -e --arg inline "'unsafe-inline'" '
@@ -112,8 +113,9 @@ check_page /privacy-policy
 
 fetch "$asset"
 [[ $STATUS == 200 ]] || fail "GET $asset: HTTP $STATUS"
-jq -e '.["cache-control"] // [] | any(contains("immutable"))' <<< "$HEADERS" > /dev/null ||
-  fail "GET $asset: no immutable Cache-Control"
+# no-transform would stop Cloudflare compressing it.
+jq -e '(.["cache-control"] // []) | length == 1 and (.[0] | contains("immutable") and (contains("no-transform") | not))' \
+  <<< "$HEADERS" > /dev/null || fail "GET $asset: Cache-Control is not immutable without no-transform: $(jq -c '.["cache-control"]' <<< "$HEADERS")"
 echo "ok: GET $asset is cached as immutable"
 
 fetch /smoke-test-missing-page

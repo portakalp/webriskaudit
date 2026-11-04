@@ -14,7 +14,13 @@
 # deploy workflow builds with (https://api.webriskaudit.com); change the two
 # together, or the browser blocks every scan. The deploy job refuses a build
 # where they differ.
+#
+# no-transform keeps the edge from changing the pages. Cloudflare's JavaScript
+# Detections adds an inline script that differs on every request, so no hash
+# can allow it, and this zone's dashboard has no switch for it. It also stops
+# Cloudflare compressing these responses, so build assets detach it below.
 /*
+  Cache-Control: public, max-age=0, must-revalidate, no-transform
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
@@ -25,4 +31,5 @@
 
 # Build assets have content-hashed names and never change.
 /_next/static/*
+  ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable

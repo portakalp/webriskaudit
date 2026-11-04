@@ -65,6 +65,10 @@ third-party app.
 - `_headers` applies to static asset responses only. Adding a Worker script
   later (for example for server-side rendering) would need the headers set
   in that script too.
+- Pages are sent with `Cache-Control: no-transform`, so the edge adds no
+  script that the hash-based CSP would block. Cloudflare then does not
+  compress them either: the home page is about 20 KB instead of 6 KB. Build
+  assets keep their compression.
 - Rollback is a dashboard click or `wrangler rollback`; there is no build
   to repeat.
 - `wrangler-action` installs wrangler with `pnpm add` at deploy time, so
