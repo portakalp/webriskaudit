@@ -16,6 +16,11 @@ the same network tag and service account as the API. Expected:
   available for Direct VPC egress;
 - the metadata server must not answer a request without Metadata-Flavor.
 
+Direct VPC egress does not work for the first 8 to 15 seconds of a new
+container, and UDP queries to 9.9.9.10 are lost now and then. So the script
+first waits for the network (the "network" line says how long that took), and
+a UDP query counts as blocked only when every attempt goes unanswered.
+
 It contacts only webriskaudit.com, the two allowed resolvers (1.1.1.1 also
 over IPv6), 8.8.8.8 and private or link-local addresses. It uses the
 standard library only and does not use the system resolver. Prints one JSON
@@ -31,6 +36,7 @@ import socket
 import ssl
 import struct
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from functools import partial
@@ -43,6 +49,9 @@ PRIVATE_TARGETS = ("10.0.0.1", "172.16.0.1", "192.168.0.1")
 IPV6_TARGET = "2606:4700:4700::1111"  # 1.1.1.1's IPv6 address; it listens on 443
 METADATA = "169.254.169.254"
 TIMEOUT = 3.0
+NETWORK_WAIT = 60.0  # measured start-up delay: 8 to 15 seconds
+NETWORK_POLL = 1.0
+UDP_ATTEMPTS = 5
 USER_AGENT = "webriskaudit-egress-check"
 
 TYPE_A = 1
@@ -133,26 +142,47 @@ def _parse_answers(msg: bytes, qid: int, qtype: int) -> list[bytes]:
     return answers
 
 
-def resolve(server: str, transport: str, name: str, qtype: int, qclass: int) -> list[bytes]:
-    qid, query = dns_query(name, qtype, qclass)
-    if transport == "udp":
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.settimeout(TIMEOUT)
-            try:
-                sock.sendto(query, (server, 53))
-                reply, _ = sock.recvfrom(4096)
-            except (TimeoutError, ConnectionRefusedError) as exc:
-                raise BlockedError(type(exc).__name__) from exc
-    else:
-        with connect(server, 53) as sock:
-            sock.settimeout(TIMEOUT)
-            try:
-                sock.sendall(struct.pack("!H", len(query)) + query)
-                size = struct.unpack("!H", recv_exactly(sock, 2))[0]
-                reply = recv_exactly(sock, size)
-            except TimeoutError as exc:
-                raise BlockedError("no reply") from exc
-    return parse_answers(reply, qid, qtype)
+def udp_exchange(server: str, query: bytes) -> bytes:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(TIMEOUT)
+        try:
+            sock.sendto(query, (server, 53))
+            return sock.recvfrom(4096)[0]
+        except (TimeoutError, ConnectionRefusedError) as exc:
+            raise BlockedError(type(exc).__name__) from exc
+
+
+def tcp_exchange(server: str, query: bytes) -> bytes:
+    with connect(server, 53) as sock:
+        sock.settimeout(TIMEOUT)
+        try:
+            sock.sendall(struct.pack("!H", len(query)) + query)
+            size = struct.unpack("!H", recv_exactly(sock, 2))[0]
+            return recv_exactly(sock, size)
+        except TimeoutError as exc:
+            raise BlockedError("no reply") from exc
+
+
+def resolve(
+    server: str, transport: str, name: str, qtype: int, qclass: int
+) -> tuple[list[bytes], int]:
+    """RDATA of the answers, and the attempt that got them.
+
+    UDP gets UDP_ATTEMPTS tries, each with a new socket and query ID: one lost
+    packet is not a firewall block, which drops every attempt, and one reply
+    is enough to show that the port is open.
+    """
+    if transport != "udp":
+        qid, query = dns_query(name, qtype, qclass)
+        return parse_answers(tcp_exchange(server, query), qid, qtype), 1
+    failure = ""
+    for attempt in range(1, UDP_ATTEMPTS + 1):
+        qid, query = dns_query(name, qtype, qclass)
+        try:
+            return parse_answers(udp_exchange(server, query), qid, qtype), attempt
+        except BlockedError as exc:
+            failure = str(exc)
+    raise BlockedError(f"{failure} on all {UDP_ATTEMPTS} attempts")
 
 
 def recv_exactly(sock: socket.socket, size: int) -> bytes:
@@ -165,13 +195,15 @@ def recv_exactly(sock: socket.socket, size: int) -> bytes:
     return data
 
 
-def resolve_a(server: str, transport: str, name: str) -> list[str]:
-    return [socket.inet_ntoa(r) for r in resolve(server, transport, name, TYPE_A, CLASS_IN)]
+def resolve_a(server: str, transport: str, name: str) -> tuple[list[str], int]:
+    """A records, and the attempt that got them."""
+    answers, attempt = resolve(server, transport, name, TYPE_A, CLASS_IN)
+    return [socket.inet_ntoa(r) for r in answers], attempt
 
 
 def egress_address() -> str:
     """Our public address as 1.1.1.1 sees it (whoami.cloudflare, CHAOS TXT)."""
-    answers = resolve(ALLOWED_RESOLVERS[0], "udp", "whoami.cloudflare", TYPE_TXT, CLASS_CH)
+    answers, _ = resolve(ALLOWED_RESOLVERS[0], "udp", "whoami.cloudflare", TYPE_TXT, CLASS_CH)
     if not answers:
         raise ValueError("no TXT answer")
     rdata = answers[0]
@@ -184,6 +216,26 @@ def egress_address() -> str:
 def tcp_connect(address: str, port: int) -> str:
     with connect(address, port):
         return "connected"
+
+
+def wait_for_network() -> str:
+    """Return once an allowed resolver accepts a TCP connection; BlockedError
+    if none does within about NETWORK_WAIT seconds.
+
+    Until then every probe would fail, and the ones expected to be blocked
+    would pass without proving anything. TCP, because UDP loses packets.
+    """
+    started = time.monotonic()
+    while True:
+        for server in ALLOWED_RESOLVERS:
+            try:
+                tcp_connect(server, 53)
+            except (BlockedError, OSError):
+                continue
+            return f"{server} connected after {time.monotonic() - started:.1f} s"
+        if time.monotonic() - started >= NETWORK_WAIT:
+            raise BlockedError(f"no connection within {NETWORK_WAIT:g} s")
+        time.sleep(NETWORK_POLL)
 
 
 def ipv6_probe() -> str:
@@ -230,7 +282,9 @@ def run(check: str, target: str, expect: str, probe: Callable[[], str]) -> Resul
 
 
 def dns_probe(server: str, transport: str) -> str:
-    return ", ".join(resolve_a(server, transport, SITE))
+    addresses, attempt = resolve_a(server, transport, SITE)
+    detail = ", ".join(addresses)
+    return detail if attempt == 1 else f"{detail} (attempt {attempt})"
 
 
 def http_probe(address: str, port: int, tls: bool) -> str:
@@ -293,12 +347,15 @@ def egress_check() -> Result:
 
 
 def main() -> int:
+    target = ", ".join(f"{server}:53/tcp" for server in ALLOWED_RESOLVERS)
+    network = run("network", target, "allowed", wait_for_network)
     try:
-        site_address: str | None = resolve_a(ALLOWED_RESOLVERS[0], "udp", SITE)[0]
+        addresses, _ = resolve_a(ALLOWED_RESOLVERS[0], "udp", SITE)
+        site_address: str | None = addresses[0]
     except (BlockedError, OSError, ValueError, IndexError):
         site_address = None
 
-    results = [*checks(site_address), metadata_check(), egress_check()]
+    results = [network, *checks(site_address), metadata_check(), egress_check()]
     for result in results:
         print(json.dumps({**asdict(result), "ok": result.ok}), flush=True)
     failed = [r for r in results if not r.ok]
