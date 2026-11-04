@@ -50,9 +50,11 @@ the sales funnel.
   have to be set on the static host or CDN, because Next.js header
   configuration does not apply to a static export.
 - Next.js emits inline scripts and a static export cannot add a per-request
-  nonce, so a strict CSP for the site needs script hashes. The site
-  currently allows `'unsafe-inline'` in `script-src`, and the scanner's own
-  report for webriskaudit.com warns about it.
+  nonce, so a strict CSP for the site needs script hashes. They change with
+  every build, so `pnpm build` computes them from the exported HTML and fills
+  them into `script-src` (`frontend/scripts/csp-hashes.mjs`), which has no
+  `'unsafe-inline'`. An inline script added after the build, such as by an
+  edge feature, is blocked.
 - Reports cannot be server-rendered or shared by URL; that would need a
   server or a stored report, which [ADR 0003](0003-no-personal-data.md) rules
   out for now.

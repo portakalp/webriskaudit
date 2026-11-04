@@ -48,7 +48,9 @@ third-party app.
   the old Pages project gives it up, and a follow-up change adds it to
   `wrangler.jsonc` and turns `workers_dev` off.
 - `public/_headers` stays the single source of the site's headers;
-  `nginx.conf` mirrors it for the Docker image.
+  `nginx.conf` mirrors it for the Docker image. `pnpm build` fills the
+  script hashes of the CSP into both, so `out/_headers` is the file that
+  takes effect.
 
 ## Consequences
 
