@@ -60,7 +60,7 @@ const SCRIPT_TYPES = new Set([
  *
  * It differs from a browser on markup the export does not have. JSDOM parses
  * with scripting off, so <noscript> content counts as markup, and this does not
- * see into declarative shadow roots or srcdoc frames. An SVG script with child
+ * see into <template shadowrootmode> or srcdoc frames. An SVG script with child
  * elements gets the wrong text. A script added at run time, such as an inline
  * next/script, is not in the HTML at all, so it has no hash and is blocked.
  *
