@@ -244,8 +244,8 @@ e. **TLS to the origin.** Rules → Configuration Rules → Create:
    mode or a high Security Level for this host; API calls cannot solve
    challenges.
 
-f. **Origin header.** Rules → Transform Rules → **Modify Request Header**
-   → Create: `Hostname equals api.webriskaudit.com` → **Set static**,
+f. **Origin header.** Rules → Overview → Create rule → **Request Header
+   Transform Rule**: `Hostname equals api.webriskaudit.com` → **Set static**,
    header `X-Origin-Auth`, value from step 5.
 
 g. **Cache.** Rules → Cache Rules → Create:
@@ -269,8 +269,8 @@ j. **Bot Fight Mode: Off** (Security → Bots, whole zone). It can challenge
 
 k. **Client address.** Network → **Pseudo IPv4: Off** (its "Overwrite
    Headers" mode replaces IPv6 addresses in `CF-Connecting-IP` and breaks
-   the per-/64 limit). Rules → Managed Transforms → **Remove visitor IP
-   headers: Off**. Leave "Add security headers" for the cutover.
+   the per-/64 limit). Rules → Settings → Managed Transforms → **Remove
+   visitor IP headers: Off**. Leave "Add security headers" for the cutover.
 
 l. **API token for the site deploy.** Manage Account → **Account API
    Tokens** → Create → Custom: permission **Account › Workers Scripts ›
@@ -505,11 +505,12 @@ Before: the checks above pass, the privacy note for the new hosting is on
 production and preview deployments are off. In one session at a quiet hour
 (30 to 60 minutes):
 
-1. **Remove the old dashboard header rules.** Rules → Transform Rules →
-   Modify Response Header: **disable** (do not delete yet) the CSP and
-   Permissions-Policy rules. Their `connect-src` points at the old API, so
-   the browser would block every scan.
-2. Rules → Managed Transforms → **Add security headers: Off** (it overrides
+1. **Remove the old dashboard header rules.** Rules → Overview: **disable**
+   (do not delete yet) the Response Header Transform Rules that set
+   `Content-Security-Policy` and `Permissions-Policy`. Their names may not
+   say so, and one rule may set both. Their `connect-src` points at the old
+   API, so the browser would block every scan.
+2. Rules → Settings → Managed Transforms → **Add security headers: Off** (it overrides
    the site's `X-Frame-Options` and `Referrer-Policy` and adds `Expect-CT`
    and `X-XSS-Protection`).
 3. Turn off everything that injects scripts: Rocket Loader, Zaraz, Web
