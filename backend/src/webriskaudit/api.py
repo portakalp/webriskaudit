@@ -593,7 +593,7 @@ def create_app(*, settings: Settings | None = None, scan: ScanFn | None = None) 
         title="WebRiskAudit API",
         version=__version__,
         description="Passive security posture scanner for domains: email authentication, "
-        "HTTPS/TLS and HTTP security headers, with evidence for every verdict.",
+        "HTTPS/TLS and HTTP security headers, with the evidence each check records.",
         lifespan=lifespan,
         # Off in production: the pages load scripts from a CDN. app.openapi() still works.
         docs_url="/docs" if docs else None,

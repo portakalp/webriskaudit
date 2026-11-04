@@ -406,7 +406,7 @@
     }
   },
   "info": {
-    "description": "Passive security posture scanner for domains: email authentication, HTTPS/TLS and HTTP security headers, with evidence for every verdict.",
+    "description": "Passive security posture scanner for domains: email authentication, HTTPS/TLS and HTTP security headers, with the evidence each check records.",
     "title": "WebRiskAudit API",
     "version": "2.0.0"
   },

@@ -42,10 +42,11 @@ you run a site and see this traffic:
   [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) ("Finding the NAT address")
   describes how it is looked up. Copies of the code that others run use
   their own addresses.
-- **What a scan requests.** One TLS handshake on port 443 and one `GET`
-  request each for `http://<domain>/` and `https://<domain>/`, following at
-  most 5 redirects that the site sends, on ports 80 and 443 only. Nothing
-  else is requested. DNS lookups go through the public resolvers `1.1.1.1`
+- **What a scan requests.** A TLS handshake on port 443 to read the
+  certificate and one `GET` request each for `http://<domain>/` and
+  `https://<domain>/`, following at most 5 redirects that the site sends, on
+  ports 80 and 443 only; each HTTPS request makes its own TLS handshake.
+  Nothing else is requested. DNS lookups go through the public resolvers `1.1.1.1`
   and `9.9.9.10`, so your name servers see those resolvers, not the
   scanner's address. A domain's report is cached for 10 minutes, so a site
   is normally fetched at most once in 10 minutes, however many people ask.
