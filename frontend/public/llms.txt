@@ -1,6 +1,6 @@
 # WebRiskAudit
 
-> WebRiskAudit is an open-source, non-commercial passive security scanner. Given a domain, it runs a small set of automated checks against publicly visible signals and reports each result (pass, warning, fail, inconclusive or info) with the evidence behind it, a fix and references, plus a score from 0 to 100 and a grade from A to F. Results are heuristic and are not a substitute for a professional security assessment.
+> WebRiskAudit is an open-source, non-commercial passive security scanner. Given a domain, it runs a small set of automated checks against publicly visible signals and reports each result (pass, warning, fail, inconclusive or info) with the evidence, fix and references it has, plus a score from 0 to 100 and a grade from A to F. Results are heuristic and are not a substitute for a professional security assessment.
 
 - Website: https://webriskaudit.com
 - Source code: https://github.com/portakalp/webriskaudit
@@ -16,7 +16,7 @@
 
 ## How it works
 
-- Only passive requests are made: DNS lookups (the domain's addresses and its SPF, DMARC and DKIM records), one TLS handshake on port 443 to read the certificate, and HTTP GET requests for the http:// and https:// home page, following up to 5 redirects.
+- Only passive requests are made: DNS lookups (the domain's addresses and its SPF, DMARC and DKIM records), a TLS handshake on port 443 to read the certificate, and HTTP GET requests for the http:// and https:// home page, following up to 5 redirects; each HTTPS request makes its own TLS handshake.
 - Nothing beyond these requests is made: no link crawling, port scanning, fuzzing, authentication or exploitation is attempted. Requests to non-public addresses are refused.
 - The score counts only checks that reached a verdict: a pass earns a check's full weight, a warning half, a fail nothing. Inconclusive checks are left out, and if checks worth less than half of the points reach a verdict, no score is given.
 - No account is needed. The domain is sent to the WebRiskAudit API, which runs the checks and returns the report. The API keeps no database of scans; it caches a report in memory for 10 minutes, and its log records each scanned domain with the outcome, score, grade and duration, but no IP addresses.

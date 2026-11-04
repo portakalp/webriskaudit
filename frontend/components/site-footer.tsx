@@ -21,7 +21,7 @@ export function SiteFooter() {
           </Link>
         </nav>
         <p className="text-pretty text-xs text-slate-600">
-          Passive checks only: DNS lookups, one TLS handshake and HTTP GET requests for the home page. Automated,
+          Passive checks only: DNS lookups, TLS handshakes and HTTP GET requests for the home page. Automated,
           heuristic results; not a substitute for a professional security assessment.
         </p>
       </div>
