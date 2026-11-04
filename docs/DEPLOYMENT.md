@@ -490,8 +490,9 @@ the `workers.dev` URL that wrangler reports.
 
 The smoke test checks what to look for by hand on
 `https://webriskaudit-web.SUBDOMAIN.workers.dev`: `/` and `/privacy-policy`
-load with exactly one `content-security-policy` (with the API origin and
-without `'unsafe-inline'` in `script-src`), `x-frame-options: DENY`,
+load with exactly one `content-security-policy` (with the API origin,
+without `'unsafe-inline'` in `script-src` and with the hash of each inline
+script of the page as served), `x-frame-options: DENY`,
 `x-content-type-options: nosniff`,
 `referrer-policy: strict-origin-when-cross-origin`, no
 `access-control-allow-origin: *` and no Google Tag Manager; a

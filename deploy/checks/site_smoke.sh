@@ -5,8 +5,9 @@
 #   SITE_URL=https://webriskaudit-web.SUBDOMAIN.workers.dev \
 #   API_ORIGIN=https://api.webriskaudit.com deploy/checks/site_smoke.sh
 #
-# Checks pages, the 404 page and the headers from frontend/public/_headers.
-# Needs curl 7.83 or later and jq.
+# Checks pages, the 404 page, the headers from frontend/public/_headers and
+# that the CSP has the hash of each inline script of the pages as served.
+# Needs curl 7.83 or later, jq and Node.js.
 set -euo pipefail
 
 : "${SITE_URL:?the deployed site, such as https://webriskaudit-web.SUBDOMAIN.workers.dev}"
@@ -42,9 +43,24 @@ fetch() {
   [[ $STATUS != 000 ]] || fail "GET $1: no response"
 }
 
+# The base64 SHA-256 of each inline script in $work/body, one per line: every
+# script tag with text, except those with src or a JSON type. It reads and hashes
+# bytes, so it sees the page as served, not as frontend/scripts/csp-hashes.mjs
+# saw it in the build.
+inline_script_hashes() {
+  node -e '
+    const { createHash } = require("node:crypto")
+    const html = require("node:fs").readFileSync(process.argv[1], "latin1")
+    for (const [, attributes, text] of html.matchAll(/<script\b([^>]*)>(.*?)<\/script\s*>/gis)) {
+      if (text === "" || /\ssrc=|\stype="application\/(ld\+)?json"/i.test(attributes)) continue
+      console.log(createHash("sha256").update(text, "latin1").digest("base64"))
+    }
+  ' "$work/body"
+}
+
 # The security headers every page must carry, once each.
 check_page() {
-  local path=$1
+  local path=$1 hashes hash
   [[ $STATUS == 200 ]] || fail "GET $path: HTTP $STATUS"
   jq -e --arg connect "connect-src 'self' $API_ORIGIN;" '
     (.["content-security-policy"] | length == 1 and (.[0] | contains($connect)))
@@ -59,10 +75,21 @@ check_page() {
     | map(select(test("^\\s*script-src[a-z-]*\\s")))
     | length > 0 and all(contains($inline) | not)
   ' <<< "$HEADERS" > /dev/null || fail "GET $path: no script-src, or it allows 'unsafe-inline'"
+  # A script changed or added after the build has no hash: the browser blocks it
+  # while the page still returns 200. Every page of the export has inline scripts.
+  hashes=$(inline_script_hashes) || fail "GET $path: could not hash the inline scripts"
+  [[ -n $hashes ]] || fail "GET $path: no inline scripts found"
+  while read -r hash; do
+    jq -e --arg hash "'sha256-$hash'" '
+      .["content-security-policy"][0] | split(";")
+      | map(select(test("^\\s*script-src[a-z-]*\\s"; "i")))
+      | any(split(" ") | index($hash))
+    ' <<< "$HEADERS" > /dev/null || fail "GET $path: an inline script has no hash in script-src: sha256-$hash"
+  done <<< "$hashes"
   if grep -qi googletagmanager "$work/body" || grep -qi googletagmanager <<< "$HEADERS"; then
     fail "GET $path: the page refers to Google Tag Manager"
   fi
-  echo "ok: GET $path with one CSP allowing $API_ORIGIN, without 'unsafe-inline' in script-src"
+  echo "ok: GET $path with one CSP allowing $API_ORIGIN and the hash of each inline script, without 'unsafe-inline' in script-src"
 }
 
 # A new workers.dev subdomain may at first not resolve or not answer.
