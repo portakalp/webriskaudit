@@ -751,8 +751,11 @@ Check these during the first deploy and update this file:
   The resolver (`net/dns.py`) works around it: a lookup that times out over
   UDP is retried over TCP within the same 5 s limit, with 2.5 s for UDP and
   the rest for TCP, shared between the two resolvers. dnspython does not do
-  this by itself. Not tested on the real path yet: the fallback has only
-  run against a stub of dnspython's transport.
+  this by itself. Tested from inside the VPC with UDP timeouts forced in
+  the client: all 12 lookups were answered over real TCP in about 2.6 s, to
+  both resolvers and through the firewall. In 40 lookups without forced
+  timeouts no UDP query was lost, so a natural loss has not yet gone
+  through the fallback.
 - Whether `roles/run.developer` on the service alone lets the deployer set
   Direct VPC egress. If the deploy fails with a `compute.subnetworks.use`
   permission error, grant the deployer `roles/compute.networkUser` on the
