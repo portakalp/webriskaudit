@@ -57,7 +57,7 @@ What lives where:
 | Project resources: APIs, network, firewall, NAT, load balancer, certificate, IAM, WIF, secret (without value), logging, monitoring | `infra/gcp/` (Terraform, applied by hand) |
 | Cloud Run service spec (image, scaling, VPC, env, probes) | `deploy/cloudrun/service.yaml` (applied by the deploy workflow) |
 | Egress firewall proof | `deploy/checks/egress_check.py`, `deploy/cloudrun/egress-check-job.yaml` |
-| Site Worker (static assets, `workers.dev` until the cutover) | `frontend/wrangler.jsonc` (applied by the deploy workflow) |
+| Site Worker (static assets on the `webriskaudit.com` custom domain) | `frontend/wrangler.jsonc` (applied by `wrangler deploy`) |
 | Builds, deploys, rollback workflow | `.github/workflows/ci.yml` (`deploy-api`, `deploy-site`), `.github/workflows/rollback-api.yml` |
 | Post-deploy smoke tests | `deploy/checks/api_smoke.sh`, `deploy/checks/site_smoke.sh` |
 | Billing, budget, state bucket, secret value, Cloudflare rules, GitHub settings | By hand, this file |
@@ -244,8 +244,8 @@ e. **TLS to the origin.** Rules → Configuration Rules → Create:
    mode or a high Security Level for this host; API calls cannot solve
    challenges.
 
-f. **Origin header.** Rules → Transform Rules → **Modify Request Header**
-   → Create: `Hostname equals api.webriskaudit.com` → **Set static**,
+f. **Origin header.** Rules → Overview → Create rule → **Request Header
+   Transform Rule**: `Hostname equals api.webriskaudit.com` → **Set static**,
    header `X-Origin-Auth`, value from step 5.
 
 g. **Cache.** Rules → Cache Rules → Create:
@@ -269,8 +269,8 @@ j. **Bot Fight Mode: Off** (Security → Bots, whole zone). It can challenge
 
 k. **Client address.** Network → **Pseudo IPv4: Off** (its "Overwrite
    Headers" mode replaces IPv6 addresses in `CF-Connecting-IP` and breaks
-   the per-/64 limit). Rules → Managed Transforms → **Remove visitor IP
-   headers: Off**. Leave "Add security headers" for the cutover.
+   the per-/64 limit). Rules → Settings → Managed Transforms → **Remove
+   visitor IP headers: Off**. Leave "Add security headers" for the cutover.
 
 l. **API token for the site deploy.** Manage Account → **Account API
    Tokens** → Create → Custom: permission **Account › Workers Scripts ›
@@ -472,6 +472,10 @@ bucket.
 
 ### Site on workers.dev
 
+Before the cutover only. Since v2.0.0 `wrangler.jsonc` has `workers_dev:
+false`, the site lives only on `webriskaudit.com`, and the smoke test runs
+against that domain.
+
 ```bash
 gh variable set DEPLOY_SITE --body true
 gh workflow run ci.yml --ref main
@@ -501,11 +505,12 @@ Before: the checks above pass, the privacy note for the new hosting is on
 production and preview deployments are off. In one session at a quiet hour
 (30 to 60 minutes):
 
-1. **Remove the old dashboard header rules.** Rules → Transform Rules →
-   Modify Response Header: **disable** (do not delete yet) the CSP and
-   Permissions-Policy rules. Their `connect-src` points at the old API, so
-   the browser would block every scan.
-2. Rules → Managed Transforms → **Add security headers: Off** (it overrides
+1. **Remove the old dashboard header rules.** Rules → Overview: **disable**
+   (do not delete yet) the Response Header Transform Rules that set
+   `Content-Security-Policy` and `Permissions-Policy`. Their names may not
+   say so, and one rule may set both. Their `connect-src` points at the old
+   API, so the browser would block every scan.
+2. Rules → Settings → Managed Transforms → **Add security headers: Off** (it overrides
    the site's `X-Frame-Options` and `Referrer-Policy` and adds `Expect-CT`
    and `X-XSS-Protection`).
 3. Turn off everything that injects scripts: Rocket Loader, Zaraz, Web
@@ -513,9 +518,12 @@ production and preview deployments are off. In one session at a quiet hour
 4. Old Pages project → Custom domains: delete the apex CNAME in DNS first,
    then remove the `webriskaudit.com` custom domain (and `www`). A Worker
    custom domain cannot be created over an existing CNAME.
-5. Workers & Pages → `webriskaudit-web` → Settings → Domains & Routes →
-   Add → **Custom domain** → `webriskaudit.com`. If `www` exists, keep it
-   proxied and add a Redirect Rule `www` → apex (301).
+5. Run `wrangler deploy` in `frontend/`. The custom domain route in
+   `wrangler.jsonc` creates the `webriskaudit.com` DNS record and its
+   certificate. While the hostname still has another DNS record, it fails
+   with code 100117 ("already has externally managed DNS records"); delete
+   that record (step 4) and run it again. If `www` exists, keep it proxied
+   and add a Redirect Rule `www` → apex (301).
 6. Verify:
    ```bash
    curl -sI https://webriskaudit.com
@@ -530,10 +538,10 @@ production and preview deployments are off. In one session at a quiet hour
    browser shows no CSP errors in the console. **Unverified:** whether the
    zone's HSTS and the site's `_headers` produce two HSTS headers (harmless,
    but note it).
-7. Merge the follow-up that adds the custom domain route to
-   `wrangler.jsonc`, sets `workers_dev: false`, and removes the README's
-   "v2 rebuild in progress" status note and its sentence saying the live
-   site still serves v1.
+7. Merge the follow-up that sets `workers_dev: false`, points the site
+   smoke test at `https://webriskaudit.com`, and removes the README's
+   pre-launch status note. Then run `wrangler deploy` again, so the
+   `workers.dev` copy goes away.
 
 Cutover rollback (if not fixed within 15 minutes): remove the Worker's
 custom domain; delete the Advanced Certificate it created, if any (it is
