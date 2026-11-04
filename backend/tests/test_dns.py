@@ -19,8 +19,9 @@ FIRST = "192.0.2.53"
 SECOND = "198.51.100.53"
 SERVERS = (FIRST, SECOND)
 
-# Long enough for dnspython's 0.1 s pause after the UDP round.
-QUICK = 0.2
+# dnspython pauses 0.1 s and 0.2 s between UDP rounds, so TCP starts after 0.3 s. The 0.2 s
+# left is for a busy machine, where a pause can run 0.2 s over; with less the tests flake.
+QUICK = 0.5
 
 RECORDS = {
     dns.rdatatype.A: "203.0.113.7",
@@ -125,8 +126,8 @@ async def test_udp_answer_needs_no_tcp(network: Install, queries: list[Query]) -
 async def test_second_nameserver_answers_when_the_first_times_out_on_udp(
     network: Install, queries: list[Query]
 ) -> None:
-    network({**everywhere(answers), (FIRST, "udp"): silent})
-    resolver = DnsResolver(lifetime=QUICK, nameservers=SERVERS)
+    network({**everywhere(answers), (FIRST, "udp"): lost})
+    resolver = DnsResolver(nameservers=SERVERS)
     assert await resolver.txt("example.com") == ["v=spf1 -all"]
     assert queries == [(FIRST, "udp"), (SECOND, "udp")]
 
