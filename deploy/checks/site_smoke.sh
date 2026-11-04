@@ -53,10 +53,16 @@ check_page() {
     and .["referrer-policy"] == ["strict-origin-when-cross-origin"]
     and ((.["access-control-allow-origin"] // []) | index("*") == null)
   ' <<< "$HEADERS" > /dev/null || fail "GET $path: unexpected headers: $(jq -c . <<< "$HEADERS")"
+  # Only script-src: style-src keeps 'unsafe-inline'.
+  jq -e --arg inline "'unsafe-inline'" '
+    .["content-security-policy"][0] | ascii_downcase | split(";")
+    | map(select(test("^\\s*script-src[a-z-]*\\s")))
+    | length > 0 and all(contains($inline) | not)
+  ' <<< "$HEADERS" > /dev/null || fail "GET $path: no script-src, or it allows 'unsafe-inline'"
   if grep -qi googletagmanager "$work/body" || grep -qi googletagmanager <<< "$HEADERS"; then
     fail "GET $path: the page refers to Google Tag Manager"
   fi
-  echo "ok: GET $path with one CSP allowing $API_ORIGIN"
+  echo "ok: GET $path with one CSP allowing $API_ORIGIN, without 'unsafe-inline' in script-src"
 }
 
 # A new workers.dev subdomain may at first not resolve or not answer.
