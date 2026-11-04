@@ -155,12 +155,13 @@ Its settings are limits, allowed origins and the DNS resolvers to query.
 
 ### Traffic at third parties (A2)
 
-1. **Fixed request budget per scan.** One TLS handshake on port 443 and two
-   `GET` chains (`http://<domain>/` and `https://<domain>/`) of at most 6
-   requests each (the first request and 5 redirects). No other paths, ports
-   or methods, no request bodies and no retries. DNS: A/AAAA for the
-   pre-check, one TXT for SPF, up to 7 TXT for DMARC, 11 TXT for DKIM, and
-   A/AAAA again before every HTTP hop and the TLS probe.
+1. **Fixed request budget per scan.** A TLS handshake on port 443 to read
+   the certificate and two `GET` chains (`http://<domain>/` and
+   `https://<domain>/`) of at most 6 requests each (the first request and 5
+   redirects); each HTTPS request makes its own TLS handshake. No other
+   paths, ports or methods, no request bodies and no retries. DNS: A/AAAA
+   for the pre-check, one TXT for SPF, up to 7 TXT for DMARC, 11 TXT for
+   DKIM, and A/AAAA again before every HTTP hop and the TLS probe.
 2. **Rate limits on new scans** (`ratelimit.py`, `api.py`). Per client (an
    IPv4 address, or an IPv6 /64 network, since one subscriber usually holds
    a whole /64): 10 new scans per 10 minutes as a sliding window, and one

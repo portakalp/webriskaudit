@@ -263,9 +263,20 @@ i. **Rate limit** (the Free plan allows one rule, path only, IP-based,
    requests, so one scan from a browser counts twice. The API's own limits
    (10 scans per 10 minutes per client) are the real control.
 
-j. **Bot Fight Mode: Off** (Security → Bots, whole zone). It can challenge
-   API calls, cannot be skipped by a WAF rule, and sets the `__cf_bm`
-   cookie, which contradicts the privacy note's "no cookies".
+j. **Bot Fight Mode: Off** (Security → Settings, filter "Bot traffic",
+   whole zone). It can challenge API calls, cannot be skipped by a WAF rule,
+   and sets the `__cf_bm` cookie, which contradicts the privacy note's "no
+   cookies".
+
+   JavaScript Detections stayed on after this, and this zone's dashboard has
+   no switch for it. It adds an inline script with the request's ray ID to
+   HTML responses, so the script's hash differs on every request and the
+   site's CSP would block it. `frontend/public/_headers` therefore sends
+   `Cache-Control: no-transform`, which stops the injection. To check, this
+   must print 0:
+   ```sh
+   curl -s https://webriskaudit.com/ | grep -c challenge-platform
+   ```
 
 k. **Client address.** Network → **Pseudo IPv4: Off** (its "Overwrite
    Headers" mode replaces IPv6 addresses in `CF-Connecting-IP` and breaks
@@ -506,8 +517,10 @@ the `workers.dev` URL that wrangler reports.
 
 The smoke test checks what to look for by hand on
 `https://webriskaudit-web.SUBDOMAIN.workers.dev`: `/` and `/privacy-policy`
-load with exactly one `content-security-policy` (with the API origin),
-`x-frame-options: DENY`, `x-content-type-options: nosniff`,
+load with exactly one `content-security-policy` (with the API origin,
+without `'unsafe-inline'` in `script-src` and with the hash of each inline
+script of the page as served), `x-frame-options: DENY`,
+`x-content-type-options: nosniff`,
 `referrer-policy: strict-origin-when-cross-origin`, no
 `access-control-allow-origin: *` and no Google Tag Manager; a
 `/_next/static/` file is cached as immutable; an unknown path gets the 404
@@ -529,8 +542,13 @@ production and preview deployments are off. In one session at a quiet hour
 2. Rules → Settings → Managed Transforms → **Add security headers: Off** (it overrides
    the site's `X-Frame-Options` and `Referrer-Policy` and adds `Expect-CT`
    and `X-XSS-Protection`).
-3. Turn off everything that injects scripts: Rocket Loader, Zaraz, Web
-   Analytics automatic setup/RUM, Email Obfuscation.
+3. Turn off everything that injects scripts: Bot Fight Mode (step 6j),
+   Rocket Loader, Zaraz, Web Analytics automatic setup/RUM, Email
+   Obfuscation. `script-src` allows
+   same-origin script files and, by hash, the inline scripts of the build,
+   so the browser blocks inline scripts and other-origin scripts added at
+   the edge. Same-origin scripts, such as those under `/cdn-cgi/`, still
+   pass `'self'`.
 4. Old Pages project → Custom domains: delete the apex CNAME in DNS first,
    then remove the `webriskaudit.com` custom domain (and `www`). A Worker
    custom domain cannot be created over an existing CNAME.

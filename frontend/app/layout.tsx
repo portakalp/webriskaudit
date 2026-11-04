@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     template: "%s | WebRiskAudit",
   },
   description:
-    "WebRiskAudit is an open-source passive security scanner. It checks a domain's email authentication, TLS certificate, HTTPS redirect and HTTP security headers, and shows the evidence behind every result. Results are automated and heuristic.",
+    "WebRiskAudit is an open-source passive security scanner. It checks a domain's email authentication, TLS certificate, HTTPS redirect and HTTP security headers, and shows the evidence it records. Results are automated and heuristic.",
   keywords: [
     "WebRiskAudit",
     "passive security scanner",
@@ -39,14 +39,14 @@ export const metadata: Metadata = {
     ...openGraphDefaults,
     title: "WebRiskAudit | Open-source passive security scanner",
     description:
-      "A passive security posture check for a domain: email authentication, TLS certificate, HTTPS redirect and HTTP security headers, with the evidence behind every result.",
+      "A passive security posture check for a domain: email authentication, TLS certificate, HTTPS redirect and HTTP security headers, with the evidence it records.",
     url: "https://webriskaudit.com",
   },
   twitter: {
     ...twitterDefaults,
     title: "WebRiskAudit | Open-source passive security scanner",
     description:
-      "A passive security posture check for a domain. Automated, heuristic results from DNS lookups, one TLS handshake and HTTP requests for the home page.",
+      "A passive security posture check for a domain. Automated, heuristic results from DNS lookups, TLS handshakes and HTTP requests for the home page.",
   },
   alternates: {
     canonical: "/",
@@ -89,7 +89,7 @@ export default function RootLayout({
     name: "WebRiskAudit",
     url: "https://webriskaudit.com",
     description:
-      "Open-source passive security scanner that checks a domain's email authentication, TLS certificate, HTTPS redirect and HTTP security headers, with the evidence behind every result.",
+      "Open-source passive security scanner that checks a domain's email authentication, TLS certificate, HTTPS redirect and HTTP security headers, with the evidence it records.",
     applicationCategory: "SecurityApplication",
     isAccessibleForFree: true,
     author: {

@@ -46,7 +46,7 @@ export default function PrivacyPolicyPage() {
             Privacy
           </h1>
           <p className="text-sm text-slate-600 mb-8">
-            Last updated: 1 November 2026
+            Last updated: 4 November 2026
           </p>
 
           <div className="max-w-none">
@@ -67,10 +67,11 @@ export default function PrivacyPolicyPage() {
             <p className="text-slate-700 leading-relaxed mb-4">
               The domain you enter is sent from your browser to the WebRiskAudit API, which checks it with
               passive requests only: DNS lookups (the domain&apos;s addresses and its SPF, DMARC and DKIM
-              records), one TLS handshake on port 443 to read the certificate, and HTTP GET requests for the
-              http:// and https:// home page, following up to 5 redirects. Nothing else is requested: no link
-              crawling, port scanning or login attempts. The requests are made from the API server and name
-              WebRiskAudit in their user agent, so the scanned site sees the server&apos;s address, not yours.
+              records), a TLS handshake on port 443 to read the certificate, and HTTP GET requests for the
+              http:// and https:// home page, following up to 5 redirects; each HTTPS request makes its own TLS
+              handshake. Nothing else is requested: no link crawling, port scanning or login attempts. The
+              requests are made from the API server and name WebRiskAudit in their user agent, so the scanned
+              site sees the server&apos;s address, not yours.
               The DNS lookups go through the public resolvers of Cloudflare (1.1.1.1) and Quad9 (9.9.9.10),
               which see the domain but not your IP address and handle it under their own privacy policies (
               <a href="https://developers.cloudflare.com/1.1.1.1/privacy/public-dns-resolver/" className={LINK}>

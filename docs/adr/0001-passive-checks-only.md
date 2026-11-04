@@ -31,9 +31,10 @@ use:
 
 - DNS: A/AAAA of the domain; TXT at the domain (SPF), at `_dmarc.<domain>`
   and up to six parent names (DMARC), and at 11 common DKIM selector names.
-- One TLS handshake on port 443.
+- A TLS handshake on port 443 to read the certificate.
 - `GET http://<domain>/` and `GET https://<domain>/`, each following up to 5
-  redirects, with at most 1 MB of each body kept.
+  redirects, with at most 1 MB of each body kept. Each HTTPS request makes
+  its own TLS handshake.
 
 Nothing else: no other paths, ports or methods, no request bodies, no
 retries, no brute forcing, no exploitation. The scanner identifies itself as

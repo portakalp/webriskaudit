@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.26.0",
   "scripts": {
-    "build": "next build",
+    "build": "next build && node scripts/fill-csp-hashes.mjs",
     "dev": "next dev",
     "gen:api": "openapi-typescript ../backend/openapi.json -o lib/api-types.ts",
     "lint": "eslint .",

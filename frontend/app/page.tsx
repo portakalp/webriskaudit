@@ -48,7 +48,7 @@ export default function Home() {
               <p className="mt-6 max-w-xl text-center text-xl font-semibold leading-relaxed text-slate-800 md:text-2xl">
                 An open-source passive security scanner.{" "}
                 <span className="text-slate-600">
-                  It reads the public signals a domain already exposes and shows the evidence behind every result.
+                  It reads the public signals a domain already exposes and shows the evidence it records.
                 </span>
               </p>
             </div>
@@ -68,17 +68,17 @@ export default function Home() {
               {!showReport && (
                 <p className="mt-4 text-pretty text-center text-sm text-slate-700">
                   Checks email authentication (SPF, DMARC, DKIM), the TLS certificate, the redirect from HTTP to
-                  HTTPS, HSTS and other HTTP security headers, and cookie flags. Every result comes with the evidence
-                  behind it.
+                  HTTPS, HSTS and other HTTP security headers, and cookie flags. Where a check records evidence, the
+                  report shows it.
                 </p>
               )}
 
               <ScanWorkflow onStepChange={setWorkflowStep} />
 
               <p className="mt-6 text-pretty border-t border-slate-100 pt-6 text-center text-xs text-slate-600">
-                Only passive checks are performed: DNS lookups, one TLS handshake and HTTP GET requests for the
-                http:// and https:// home page, following up to 5 redirects. Results are automated and heuristic,
-                and are not a substitute for a professional security assessment.
+                Only passive checks are performed: DNS lookups, a TLS handshake to read the certificate and HTTP GET
+                requests for the http:// and https:// home page, following up to 5 redirects. Results are automated
+                and heuristic, and are not a substitute for a professional security assessment.
               </p>
             </div>
           </div>
