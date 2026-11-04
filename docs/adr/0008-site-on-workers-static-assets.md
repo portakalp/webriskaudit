@@ -48,9 +48,10 @@ third-party app.
   the old Pages project gives it up, and a follow-up change adds it to
   `wrangler.jsonc` and turns `workers_dev` off.
 - `public/_headers` stays the single source of the site's headers;
-  `nginx.conf` mirrors it for the Docker image. `pnpm build` fills the
-  script hashes of the CSP into both, so `out/_headers` is the file that
-  takes effect.
+  `nginx.conf` mirrors it for the Docker image. Both hold a placeholder for
+  the script hashes of the CSP. `pnpm build` leaves them as they are and
+  writes filled-in copies: `out/_headers`, the file that takes effect on
+  Workers, and `.next/nginx.conf`, which the Dockerfile completes.
 
 ## Consequences
 

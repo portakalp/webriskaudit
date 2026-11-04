@@ -517,8 +517,10 @@ production and preview deployments are off. In one session at a quiet hour
    and `X-XSS-Protection`).
 3. Turn off everything that injects scripts: Rocket Loader, Zaraz, Web
    Analytics automatic setup/RUM, Email Obfuscation. `script-src` allows
-   only the inline scripts of the build, by hash, so the browser blocks
-   anything added at the edge.
+   same-origin script files and, by hash, the inline scripts of the build,
+   so the browser blocks inline scripts and other-origin scripts added at
+   the edge. Same-origin scripts, such as those under `/cdn-cgi/`, still
+   pass `'self'`.
 4. Old Pages project → Custom domains: delete the apex CNAME in DNS first,
    then remove the `webriskaudit.com` custom domain (and `www`). A Worker
    custom domain cannot be created over an existing CNAME.
