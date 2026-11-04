@@ -392,7 +392,9 @@ bucket.
    ```
 4. **Scan** webriskaudit.com in the browser or with curl. DNS results
    without `dns-unavailable` show that port 53 to the resolvers works
-   through NAT.
+   through NAT. A `dns-unavailable` in the first seconds after an instance
+   starts does not show the opposite: see the start-up delay under
+   [Unverified points](#unverified-points), and scan again.
 5. **Rate limit and spoofing.** Each request uses a new, non-existent
    subdomain, so nothing is cached and every request counts; `sleep 2`
    keeps under the Cloudflare rule.
@@ -447,9 +449,10 @@ bucket.
      --format='value(jsonPayload)'
    gcloud run jobs delete webriskaudit-egress-check --region europe-west1 --quiet
    ```
-   Every line should have `"ok": true` and the summary `"failed": 0`:
-   DNS over UDP and TCP to `1.1.1.1` and `9.9.9.10` allowed; to `8.8.8.8`
-   blocked; webriskaudit.com on 80 and 443 allowed and on 8443 blocked
+   Every line should have `"ok": true` and the summary `"failed": 0`: the
+   network up (`network`); DNS over UDP and TCP to `1.1.1.1` and
+   `9.9.9.10` allowed; to `8.8.8.8` blocked;
+   webriskaudit.com on 80 and 443 allowed and on 8443 blocked
    (Cloudflare listens there, so this proves the final deny rule); no IPv6
    connection (`ipv6`, to `1.1.1.1`'s IPv6 address on 443); the private
    addresses unreachable (`private`); the metadata server either blocked or
@@ -457,6 +460,19 @@ bucket.
    to `nat_ip`. Record the metadata result in the threat model: if it is
    reachable, a request with the header gets a token for `api-runtime`,
    which has no roles beyond reading the origin secret.
+
+   Outbound traffic from a new container does not work at first (measured:
+   about 8 to 15 seconds), so the script waits before its first probe: it
+   tries TCP to port 53 of `1.1.1.1` and `9.9.9.10`, for about 60 seconds at
+   most. The `network` line gives the time it waited, an upper bound on the
+   delay because it only tries every few seconds. If that line says
+   `blocked`, the other lines prove nothing.
+
+   UDP to `9.9.9.10` loses packets now and then (measured, cause unknown),
+   so a UDP query gets up to 5 attempts, each with a new socket and query
+   ID. One reply makes the line `allowed`, and it only says `blocked` if
+   all 5 go unanswered. A `dns` line that needed more than one attempt ends
+   in `(attempt N)`.
 
    The `private` lines do not prove the priority-900 deny rule: nothing in
    the VPC uses those addresses and the default internet gateway does not
@@ -718,6 +734,28 @@ Check these during the first deploy and update this file:
 - Start-up time of an instance with Direct VPC egress and Cloud NAT
   (Google: "30 seconds or more"); whether a platform restart starts the new
   instance before the old one stops. The startup probe allows 180 s.
+  Measured from inside the VPC: after a container starts, outbound traffic
+  through Direct VPC egress does not work for about 8 to 15 seconds. The
+  startup probe only calls `/health`, which sends nothing out, so an
+  instance can get scans during that time. Their DNS lookups get no answer
+  and the scan is refused with 502 `dns-unavailable`. The TCP fallback
+  below does not help: TCP is cut off too, and a lookup's 5 s limit is
+  shorter than the delay. The refusal is not cached, so the same scan can
+  be repeated once egress works. Not tested: whether the smoke test's scan
+  can arrive that early; `api_smoke.sh` does not retry a 502, so the deploy
+  would be rolled back.
+- Why UDP DNS to `9.9.9.10` is lost intermittently. Measured from inside
+  the VPC: identical queries sometimes answered in 7 ms and sometimes timed
+  out, while TCP to `9.9.9.10` and UDP and TCP to `1.1.1.1` worked. The
+  firewall allows UDP and TCP 53 to both resolvers; the cause is unknown.
+  The resolver (`net/dns.py`) works around it: a lookup that times out over
+  UDP is retried over TCP within the same 5 s limit, with 2.5 s for UDP and
+  the rest for TCP, shared between the two resolvers. dnspython does not do
+  this by itself. Tested from inside the VPC with UDP timeouts forced in
+  the client: all 12 lookups were answered over real TCP in about 2.6 s, to
+  both resolvers and through the firewall. In 40 lookups without forced
+  timeouts no UDP query was lost, so a natural loss has not yet gone
+  through the fallback.
 - Whether `roles/run.developer` on the service alone lets the deployer set
   Direct VPC egress. If the deploy fails with a `compute.subnetworks.use`
   permission error, grant the deployer `roles/compute.networkUser` on the

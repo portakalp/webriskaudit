@@ -17,6 +17,13 @@ DEFAULT_LIFETIME = 5.0
 class DnsResolver:
     """Resolver backed by ``dns.asyncresolver`` with a per-query time limit.
 
+    A lookup that times out over UDP is retried over TCP within the same
+    limit; dnspython only does that for truncated replies. UDP gets the first
+    half of the limit and TCP the rest. Each half is shared evenly between
+    the nameservers, so one that hangs still leaves the others a turn on both
+    transports. With 5 seconds and two nameservers an attempt gets 1.25
+    seconds, enough for one retransmitted TCP SYN.
+
     Uses the system's nameservers unless ``nameservers`` is given; then the
     system configuration is not read at all.
     """
@@ -28,6 +35,8 @@ class DnsResolver:
         if nameservers:
             self._resolver.nameservers = list(nameservers)
         self._lifetime = lifetime
+        self._udp_lifetime = lifetime / 2
+        self._resolver.timeout = self._udp_lifetime / len(self._resolver.nameservers)
 
     @property
     def nameservers(self) -> tuple[str, ...]:
@@ -53,8 +62,22 @@ class DnsResolver:
         return [rdata.to_text() for rdata in answer]
 
     async def _resolve(self, name: str, rdtype: str) -> dns.resolver.Answer:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._lifetime
         try:
-            return await self._resolver.resolve(name, rdtype, search=False, lifetime=self._lifetime)
+            # Not dnspython's lifetime alone: it sleeps between rounds of
+            # nameservers before it looks at the clock, so it can run over.
+            async with asyncio.timeout_at(deadline):
+                try:
+                    return await self._resolver.resolve(
+                        name, rdtype, search=False, lifetime=self._udp_lifetime
+                    )
+                except dns.exception.Timeout:
+                    return await self._resolver.resolve(
+                        name, rdtype, tcp=True, search=False, lifetime=deadline - loop.time()
+                    )
+        except TimeoutError:
+            raise DnsUnavailableError(f"DNS lookup for {name} timed out") from None
         except dns.exception.DNSException as exc:
             raise dns_error(exc, name) from exc
 
