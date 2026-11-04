@@ -450,8 +450,8 @@ bucket.
    gcloud run jobs delete webriskaudit-egress-check --region europe-west1 --quiet
    ```
    Every line should have `"ok": true` and the summary `"failed": 0`: the
-   network up (`network`, the first line); DNS over UDP and TCP to
-   `1.1.1.1` and `9.9.9.10` allowed; to `8.8.8.8` blocked;
+   network up (`network`); DNS over UDP and TCP to `1.1.1.1` and
+   `9.9.9.10` allowed; to `8.8.8.8` blocked;
    webriskaudit.com on 80 and 443 allowed and on 8443 blocked
    (Cloudflare listens there, so this proves the final deny rule); no IPv6
    connection (`ipv6`, to `1.1.1.1`'s IPv6 address on 443); the private
