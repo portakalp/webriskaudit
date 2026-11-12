@@ -103,7 +103,8 @@ Do this first if the repository is going public before launch.
    and **Require status checks to pass** with the CI jobs `Frontend (lint,
    types, tests, build)`, `Backend (lint, types, tests, OpenAPI)`, `Docker
    images (build, smoke test)`, `Dependency audit`, `Terraform (format,
-   validate, test)` and `Secret scan`. Leave the bypass list empty.
+   validate, test)`, `Secret scan` and `SAST (Semgrep)`. Leave the bypass
+   list empty.
    Workload Identity Federation trusts the deploy workflows on `main`, so
    nothing should reach `main` without review and CI.
 5. Settings → Environments → **New environment** `production` →
