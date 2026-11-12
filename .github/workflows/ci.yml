@@ -152,6 +152,39 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
 
+  # Static analysis with Semgrep: registry rules for Python, TypeScript, the
+  # OWASP Top 10 and GitHub Actions, plus this project's own rules in semgrep/
+  # (outbound connections only from backend/src/webriskaudit/net/). Any finding
+  # fails the job; the SARIF report is kept as a build artifact. Findings are
+  # triaged in docs/security/scan-triage.md.
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: "3.12"
+      # Dependabot does not update the Semgrep version below; check it by hand.
+      - name: Test the project rules against semgrep/*.py
+        run: uvx semgrep@1.185.0 --test semgrep/
+      # The registry rules are downloaded from semgrep.dev; no account or token.
+      - name: Scan
+        run: |
+          uvx semgrep@1.185.0 scan --metrics=off --error \
+            --config p/python --config p/typescript --config p/owasp-top-ten \
+            --config p/github-actions --config semgrep/ \
+            --sarif-output "$RUNNER_TEMP/semgrep.sarif" .
+      - name: Keep the SARIF report
+        if: success() || failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: semgrep-sarif
+          path: ${{ runner.temp }}/semgrep.sarif
+
   # Builds the API image, replaces the Cloud Run service with
   # deploy/cloudrun/service.yaml and smoke-tests it through Cloudflare; on
   # failure or cancel, traffic goes back to the revision that served before.
@@ -160,7 +193,7 @@ jobs:
   # (docs/DEPLOYMENT.md).
   deploy-api:
     name: Deploy API (Cloud Run)
-    needs: [frontend, backend, docker, audit, terraform, secrets]
+    needs: [frontend, backend, docker, audit, terraform, secrets, sast]
     if: >-
       vars.DEPLOY_API == 'true' && github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -323,7 +356,7 @@ jobs:
   # failed or was cancelled.
   deploy-site:
     name: Deploy site (Cloudflare Workers)
-    needs: [frontend, backend, docker, audit, terraform, secrets, deploy-api]
+    needs: [frontend, backend, docker, audit, terraform, secrets, sast, deploy-api]
     if: >-
       vars.DEPLOY_SITE == 'true' && !cancelled() &&
       !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') &&

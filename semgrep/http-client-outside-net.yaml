@@ -1,0 +1,36 @@
+rules:
+  - id: http-client-outside-net
+    languages: [python]
+    severity: ERROR
+    message: >-
+      HTTP client imported outside webriskaudit/net/. Outbound HTTP must go
+      through the guarded fetcher (ScanContext.fetch, net/http.py), which
+      checks every hop for non-public addresses and pins the connection
+      (docs/adr/0004-guarded-network-layer.md). A direct client call skips
+      those SSRF guards.
+    metadata:
+      category: security
+      cwe: "CWE-918: Server-Side Request Forgery (SSRF)"
+      owasp: "A10:2021 - Server-Side Request Forgery (SSRF)"
+      references:
+        - docs/adr/0004-guarded-network-layer.md
+    paths:
+      include:
+        - /backend/src/
+      exclude:
+        - /backend/src/webriskaudit/net/
+    pattern-either:
+      - pattern: import httpx
+      - pattern: from httpx import $NAME
+      - pattern: import requests
+      - pattern: from requests import $NAME
+      - pattern: import urllib.request
+      - pattern: from urllib.request import $NAME
+      - pattern: from urllib import request
+      - pattern: import urllib3
+      - pattern: from urllib3 import $NAME
+      - pattern: import aiohttp
+      - pattern: from aiohttp import $NAME
+      - pattern: import http.client
+      - pattern: from http.client import $NAME
+      - pattern: from http import client

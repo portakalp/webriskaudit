@@ -221,8 +221,12 @@ slot.
   TLS, and sockets are disabled during the test run, except loopback for the
   tests that check SNI and certificate verification over real TLS.
 - **Hardened CI.** `mypy --strict`, ruff, ESLint, Docker smoke tests,
-  dependency audits and a secret scan on every change, with third-party
-  actions pinned to commit SHAs.
+  dependency audits, a secret scan and Semgrep static analysis on every
+  change, with third-party actions pinned to commit SHAs. Two Semgrep rules
+  of this project's own (`semgrep/`) fail the build when code outside the
+  guarded network layer imports an HTTP client or opens a socket.
+  [The scan triage](docs/security/scan-triage.md) records what Semgrep and an
+  OWASP ZAP baseline scan of the local stack reported.
 
 ### Tech stack
 

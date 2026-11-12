@@ -298,12 +298,14 @@ has this limit; the report describes what the scanner saw.
 CI pins GitHub Actions to commit SHAs, runs with a read-only token, installs
 from lockfiles (`uv sync --locked`, `pnpm install --frozen-lockfile`), audits
 dependencies (`pip-audit`, `pnpm audit`), scans for secrets (gitleaks),
-builds both Docker images and checks the Terraform in `infra/gcp/` (format,
-validate, and tests against a mocked provider). The Dockerfiles pin their
-base images by tag and digest. Dependabot proposes updates for the npm and uv
-dependencies, the GitHub Actions, the Docker base images and the Terraform
-provider. The v1 history was not imported because it contained a hardcoded
-credential.
+runs Semgrep (registry rules, and two rules in `semgrep/` that report a
+network client imported outside `net/`), builds both Docker images and checks
+the Terraform in `infra/gcp/` (format, validate, and tests against a mocked
+provider). The Dockerfiles pin their base images by tag and digest. Dependabot
+proposes updates for the npm and uv dependencies, the GitHub Actions, the
+Docker base images and the Terraform provider, each only after the version
+has been public for 7 days (security updates are not delayed). The v1 history
+was not imported because it contained a hardcoded credential.
 
 Deploys run only on `main`, after every CI job has passed, and only when the
 repository variable `DEPLOY_API` or `DEPLOY_SITE` is `true`. The API deploy
