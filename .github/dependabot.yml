@@ -1,9 +1,14 @@
+# cooldown: Dependabot proposes a version only once it has been published for
+# 7 days, so a release that turns out to be malicious or broken is usually
+# withdrawn before it reaches a pull request. Security updates are not delayed.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       frontend-minor-and-patch:
         update-types: [minor, patch]
@@ -12,6 +17,8 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       backend-minor-and-patch:
         update-types: [minor, patch]
@@ -20,15 +27,21 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
 
   # Base images in backend/Dockerfile and frontend/Dockerfile (tag and digest).
   - package-ecosystem: docker
     directories: ["/backend", "/frontend"]
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
 
   # Provider versions in infra/gcp (versions.tf and .terraform.lock.hcl).
   - package-ecosystem: terraform
     directory: /infra/gcp
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
