@@ -33,6 +33,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.status import WS_1008_POLICY_VIOLATION
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -525,10 +526,38 @@ class Sweeper:
         await self.app(scope, receive, send)
 
 
+class NoSniff:
+    """Adds ``X-Content-Type-Options: nosniff`` to every HTTP response.
+
+    The API answers with JSON, and the header tells a browser to keep to the
+    declared content type instead of guessing one from the body.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_header(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["X-Content-Type-Options"] = "nosniff"
+            await send(message)
+
+        await self.app(scope, receive, send_with_header)
+
+
 # --- Application -----------------------------------------------------------------
 
 
 class _Api(FastAPI):
+    def build_middleware_stack(self) -> ASGIApp:
+        # Starlette answers an unhandled error outside the middleware added with
+        # add_middleware. Wrapping the finished stack covers that response too.
+        return NoSniff(super().build_middleware_stack())
+
     def openapi(self) -> dict[str, Any]:
         first = self.openapi_schema is None
         schema = super().openapi()

@@ -1,0 +1,29 @@
+rules:
+  - id: raw-socket-outside-net
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Socket or DNS library used outside webriskaudit/net/. Checks never open
+      sockets themselves: DNS goes through ScanContext.resolver and TLS through
+      ScanContext.tls, so every connection is made to an address that was
+      checked to be public (docs/adr/0004-guarded-network-layer.md).
+    metadata:
+      category: security
+      cwe: "CWE-918: Server-Side Request Forgery (SSRF)"
+      owasp: "A10:2021 - Server-Side Request Forgery (SSRF)"
+      references:
+        - docs/adr/0004-guarded-network-layer.md
+    paths:
+      include:
+        - /backend/src/
+      exclude:
+        - /backend/src/webriskaudit/net/
+    pattern-either:
+      - pattern: import socket
+      - pattern: from socket import $NAME
+      - pattern: asyncio.open_connection(...)
+      - pattern: import dns.resolver
+      - pattern: import dns.asyncresolver
+      - pattern: from dns import $NAME
+      - pattern: from dns.resolver import $NAME
+      - pattern: from dns.asyncresolver import $NAME

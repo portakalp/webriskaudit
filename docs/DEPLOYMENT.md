@@ -13,7 +13,10 @@ check them during the first deploy and update this file.
 Run every command from the repository root. Terraform commands use
 `-chdir=infra/gcp`, so no step changes directory.
 
-Status: not live yet. Cutover date: _(fill in)_.
+Status: the API is deployed from CI. The public Actions history shows
+`deploy-api` succeeding first on 2026-11-03 and seven times up to 2026-11-04.
+`deploy-site` has been skipped in every run (`DEPLOY_SITE` is not `true`), so
+no site deploy has gone through CI. Cutover date: _(fill in)_.
 
 ## Architecture
 
@@ -103,7 +106,8 @@ Do this first if the repository is going public before launch.
    and **Require status checks to pass** with the CI jobs `Frontend (lint,
    types, tests, build)`, `Backend (lint, types, tests, OpenAPI)`, `Docker
    images (build, smoke test)`, `Dependency audit`, `Terraform (format,
-   validate, test)` and `Secret scan`. Leave the bypass list empty.
+   validate, test)`, `Secret scan` and `SAST (Semgrep)`. Leave the bypass
+   list empty.
    Workload Identity Federation trusts the deploy workflows on `main`, so
    nothing should reach `main` without review and CI.
 5. Settings → Environments → **New environment** `production` →
@@ -799,15 +803,23 @@ Check these during the first deploy and update this file:
 - The Cloudflare token permissions for `wrangler deploy`, zone HSTS versus
   `_headers` HSTS, whether `www` exists, the zone's plan and current SSL
   mode (only visible in the dashboard).
-- The deploy jobs have not run yet. Tested without credentials:
+- `deploy-api` has run, as the public Actions history shows. Seven runs on
+  `main` succeeded between 2026-11-03 and 2026-11-04, each with the Workload
+  Identity Federation sign-in, the image push, `services replace` and the
+  smoke test. The automatic rollback ran once, on 2026-11-03 (run
+  41631151153): Cloud Run rejected the service spec, so `services replace`
+  failed, and the rollback step put all traffic back on the revision that
+  served before (Terraform's placeholder). Not tested: the rollback after a
+  failed smoke test, after a cancel or after a job timeout, and
+  `rollback-api.yml`, which has never run.
+- `deploy-site` has not run: `DEPLOY_SITE` is not `true`, so the job was
+  skipped in every run. Tested without credentials:
   `wrangler deploy --dry-run` and `wrangler dev` with `frontend/wrangler.jsonc`
   (wrangler 4.151.1, installed with `pnpm add` as `wrangler-action` does;
   `_headers`, the 404 page and the `.html` redirects behave as described),
   the site smoke test against `wrangler dev`, and the API smoke test against
-  the API run locally behind a stand-in for Cloudflare. Not tested: Workload
-  Identity Federation, the image push, `services replace`, the automatic
-  rollback (also after a cancel or a job timeout), and whether a skipped
-  `deploy-api` lets `deploy-site` run as intended.
+  the API run locally behind a stand-in for Cloudflare. Not tested: whether a
+  skipped `deploy-api` lets `deploy-site` run as intended.
 - Answered from documentation since the plan was written: probes always
   get CPU, also with request-based billing; uptime checks support POST
   bodies, so a synthetic scan check could be added later.

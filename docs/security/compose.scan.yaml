@@ -1,0 +1,16 @@
+# Compose override for the ZAP scan in scan-triage.md.
+# - No host ports: ZAP joins the stack's network (webriskaudit_default) and
+#   reaches the services by name (http://web:8080, http://api:8000), so the scan
+#   cannot hit another local service that happens to listen on 3000 or 8000.
+# - internal: the network has no route to the internet. The API's job is to
+#   connect to the domain it is given, so without this a scanner that found
+#   POST /api/v1/scan could make the API contact a third-party host.
+services:
+  api:
+    ports: !reset []
+  web:
+    ports: !reset []
+
+networks:
+  default:
+    internal: true
