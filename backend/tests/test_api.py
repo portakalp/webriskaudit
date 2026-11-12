@@ -328,6 +328,39 @@ async def test_cors_headers_on_errors_expose_retry_after() -> None:
     assert "retry-after" in limited.headers["access-control-expose-headers"].lower()
 
 
+# --- Response headers ---------------------------------------------------------------------
+
+
+async def test_every_response_tells_the_browser_not_to_sniff_the_type() -> None:
+    async with client(create_app(settings=Settings(), scan=FakeScan())) as http:
+        replies = [
+            await http.get("/"),
+            await http.get("/health"),
+            await http.get("/docs"),
+            await http.post(SCAN, json={"domain": "example.com"}),
+            await http.post(SCAN, json={"domain": "not a domain"}),  # 422
+            await http.post(SCAN, content=b"x" * 10_000),  # 413, answered by a middleware
+            await http.get("/api/v1/nothing"),  # 404
+            await http.options(SCAN, headers=preflight(ALLOWED_ORIGIN)),
+        ]
+    assert [reply.status_code for reply in replies] == [200, 200, 200, 200, 422, 413, 404, 200]
+    assert [reply.headers.get_list("x-content-type-options") for reply in replies] == [
+        ["nosniff"]
+    ] * len(replies)
+
+
+async def test_last_resort_500_also_carries_nosniff(monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken_sweep(self: ScanService) -> None:
+        raise RuntimeError("unhandled, outside the scan route")
+
+    monkeypatch.setattr(ScanService, "sweep", broken_sweep)
+    app = create_app(settings=Settings(), scan=FakeScan())
+    async with client(app, raise_app_exceptions=False) as http:
+        reply = await http.get("/health")
+    problem(reply, 500, "internal-error")
+    assert reply.headers.get_list("x-content-type-options") == ["nosniff"]
+
+
 # --- Service routes, OpenAPI and logging --------------------------------------------------
 
 
