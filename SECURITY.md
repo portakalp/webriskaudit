@@ -38,7 +38,8 @@ you run a site and see this traffic:
   The TLS handshake that reads the certificate carries no User-Agent.
 - **Source address.** All of the hosted scanner's traffic leaves from one
   static IPv4 address, a Cloud NAT address in Google Cloud (europe-west1).
-  It has not been allocated yet; once it is, it is listed here.
+  The address is in use (the hosted API has been deployed since 2026-11-03),
+  but it is not listed here yet.
   [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) ("Finding the NAT address")
   describes how it is looked up. Copies of the code that others run use
   their own addresses.
